@@ -9,7 +9,9 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"virtual-ts": "file:../../"
+		"@tailwindcss/vite": "^4.1.12",
+		"tailwindcss": "^4.1.12",
+		"kasouka": "file:../../"
 	},
 	"devDependencies": {
 		"typescript": "~5.8.3",

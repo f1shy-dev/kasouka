@@ -5,6 +5,7 @@ import type {
   VirtualTableOptions,
 } from "./types";
 import { estimateCsvWidths } from "./measure";
+import type { DataSource } from "./datasource";
 
 export class VirtualCanvasTable {
   private ctx: CanvasRenderingContext2D;
@@ -20,6 +21,9 @@ export class VirtualCanvasTable {
   private needsDraw = true;
   private scrollScale = { domMax: 0, virtMax: 0, k: 1 };
   private csv?: CsvData;
+  private ds?: DataSource;
+  private debugEnabled = false;
+  private debugText = "";
 
   constructor(
     private els: InitElements,
@@ -38,6 +42,7 @@ export class VirtualCanvasTable {
 
   setCsv(csv: CsvData): void {
     this.csv = csv;
+    this.ds = undefined;
     // first column is #, the rest from csv header
     this.setColumns([
       { key: "id", label: "#", min: 60, align: "right" },
@@ -49,9 +54,21 @@ export class VirtualCanvasTable {
       })),
     ]);
     this.updateScrollScale();
+    const safeContentPx = Math.max(0, 16000000 - this.opts.headerHeight);
     this.els.spacer.style.height = `${
-      this.opts.headerHeight + Math.max(0, 16000000 - this.opts.headerHeight)
+      this.opts.headerHeight + safeContentPx
     }px`;
+    this.els.viewport.scrollTop = this.opts.headerHeight;
+    this.schedule();
+  }
+
+  setDataSource(ds: DataSource): void {
+    this.ds = ds;
+    this.csv = undefined;
+    this.setColumns(ds.getColumns());
+    this.updateScrollScale();
+    const safeContent = Math.max(0, 16000000 - this.opts.headerHeight);
+    this.els.spacer.style.height = `${this.opts.headerHeight + safeContent}px`;
     this.els.viewport.scrollTop = this.opts.headerHeight;
     this.schedule();
   }
@@ -70,6 +87,13 @@ export class VirtualCanvasTable {
       this.needsDraw = true;
       this.schedule();
     });
+    window.addEventListener(
+      "scroll",
+      () => {
+        this.syncCanvasPosition();
+      },
+      { passive: true }
+    );
     this.els.canvas.addEventListener("click", (e) => {
       const rect = this.els.canvas.getBoundingClientRect();
       const y = e.clientY - rect.top;
@@ -108,22 +132,74 @@ export class VirtualCanvasTable {
       this.ctx.scale(this.dpr, this.dpr);
       this.ctx.imageSmoothingEnabled = false;
       this.computeColumns();
+      this.updateScrollScale();
     }
+    this.syncCanvasPosition();
+  }
+
+  private syncCanvasPosition(): void {
+    const rect = this.els.viewport.getBoundingClientRect();
+    this.els.canvas.style.top = `${rect.top}px`;
+    this.els.canvas.style.left = `${rect.left}px`;
+  }
+
+  setDebugEnabled(enabled: boolean): void {
+    this.debugEnabled = enabled;
+    if (!enabled) this.debugText = "";
+    this.needsDraw = true;
+    this.schedule();
+  }
+
+  // Map DOM scroll (px) into a BigInt row index and fractional offset-in-row (px)
+  private computeFirstRow(
+    domContent: number,
+    viewportHeight: number
+  ): {
+    firstRowBig: bigint;
+    offsetWithin: number;
+  } {
+    const domMax = Math.max(1, Math.floor(this.scrollScale.domMax));
+    const domContentClamped = Math.max(
+      0,
+      Math.min(Math.floor(domContent), domMax)
+    );
+    const totalRowsBig: bigint = this.csv
+      ? BigInt(this.csv.rows)
+      : this.ds
+      ? this.ds.getRowCountBig && this.ds.getRowCountBig() !== undefined
+        ? (this.ds.getRowCountBig() as bigint)
+        : BigInt(this.ds.getRowCount())
+      : BigInt(0);
+    const visibleRows = Math.floor(
+      (viewportHeight - this.opts.headerHeight) / this.opts.rowHeight
+    );
+    const visibleRowsBig = BigInt(visibleRows < 0 ? 0 : visibleRows);
+    const scrollableRowsBig =
+      totalRowsBig > visibleRowsBig ? totalRowsBig - visibleRowsBig : BigInt(0);
+    if (scrollableRowsBig === BigInt(0)) {
+      return { firstRowBig: BigInt(0), offsetWithin: 0 };
+    }
+    const numer = BigInt(domContentClamped) * scrollableRowsBig;
+    const denom = BigInt(domMax);
+    const firstRowBig = numer / denom;
+    const rem = numer % denom; // < denom
+    const offsetWithin =
+      (Number(rem) / Math.max(1, Number(denom))) * this.opts.rowHeight;
+    return { firstRowBig, offsetWithin };
   }
 
   private updateScrollScale(): void {
-    const visibleContent = Math.max(
+    const visible = Math.max(
       0,
       this.els.viewport.clientHeight - this.opts.headerHeight
     );
-    const virt = this.csv
-      ? Math.max(0, this.csv.rows * this.opts.rowHeight - visibleContent)
-      : 0;
-    const domMax = Math.max(
-      0,
-      Math.max(0, 16000000 - this.opts.headerHeight) -
-        this.els.viewport.clientHeight
-    );
+    const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
+    const virt = Math.max(0, totalRows * this.opts.rowHeight - visible);
+    const safeContentPx = Math.max(0, 16000000 - this.opts.headerHeight);
+    // Align DOM scroll range with the coordinate used in computeFirstRow,
+    // which is based on (scrollTop - headerHeight). The maximum value of
+    // that expression is (safeContentPx - viewport.clientHeight).
+    const domMax = Math.max(0, safeContentPx - this.els.viewport.clientHeight);
     const k = domMax > 0 ? virt / domMax : 0;
     this.scrollScale = { domMax, virtMax: virt, k };
   }
@@ -171,17 +247,21 @@ export class VirtualCanvasTable {
   private pointToRowIndex(y: number): number {
     const domContent = Math.max(
       0,
-      Math.min(
-        this.els.viewport.scrollTop - this.opts.headerHeight,
-        this.scrollScale.domMax
-      )
+      this.els.viewport.scrollTop - this.opts.headerHeight
     );
-    const virtualOffset = domContent * this.scrollScale.k;
-    const firstRowLocal = Math.floor(virtualOffset / this.opts.rowHeight);
-    const offsetWithin = virtualOffset - firstRowLocal * this.opts.rowHeight;
+    const { firstRowBig, offsetWithin } = this.computeFirstRow(
+      domContent,
+      this.els.viewport.clientHeight
+    );
     const yStart = this.opts.headerHeight - offsetWithin;
-    const rowInView = Math.floor((y - yStart) / this.opts.rowHeight);
-    return firstRowLocal + rowInView;
+    const rowInView = Math.max(
+      0,
+      Math.floor((y - yStart) / this.opts.rowHeight)
+    );
+    const idxBig = firstRowBig + BigInt(rowInView);
+    return idxBig > BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number.MAX_SAFE_INTEGER
+      : Number(idxBig);
   }
 
   private draw(): void {
@@ -225,21 +305,32 @@ export class VirtualCanvasTable {
     ctx.restore();
     ctx.restore();
 
-    // visible rows
-    const domContent = Math.max(
-      0,
-      Math.min(scrollTop - this.opts.headerHeight, this.scrollScale.domMax)
-    );
-    const virtualOffset = domContent * this.scrollScale.k;
-    const firstRowLocal = Math.floor(virtualOffset / this.opts.rowHeight);
-    const offsetWithin = virtualOffset - firstRowLocal * this.opts.rowHeight;
+    // visible rows (BigInt-safe)
+    const domContent = Math.max(0, scrollTop - this.opts.headerHeight);
+    const { firstRowBig, offsetWithin } = this.computeFirstRow(domContent, h);
+    const firstRowLocal =
+      firstRowBig > BigInt(Number.MAX_SAFE_INTEGER)
+        ? Number.MAX_SAFE_INTEGER
+        : Number(firstRowBig);
     const yStart = this.opts.headerHeight - offsetWithin;
     const maxVisible =
       Math.ceil((h - yStart) / this.opts.rowHeight) + this.opts.overscan;
-    const totalRows = this.csv?.rows ?? 0;
+    const totalRowsBig: bigint = this.csv
+      ? BigInt(this.csv.rows)
+      : this.ds
+      ? this.ds.getRowCountBig
+        ? (this.ds.getRowCountBig() as bigint)
+        : BigInt(this.ds.getRowCount())
+      : BigInt(0);
+    const rowsRemainingBig =
+      totalRowsBig > firstRowBig ? totalRowsBig - firstRowBig : BigInt(0);
     const rowCount = Math.min(
-      totalRows - firstRowLocal,
-      Math.max(0, maxVisible)
+      maxVisible,
+      Number(
+        rowsRemainingBig > BigInt(maxVisible)
+          ? BigInt(maxVisible)
+          : rowsRemainingBig
+      )
     );
 
     // rows
@@ -251,11 +342,16 @@ export class VirtualCanvasTable {
     ctx.translate(-scrollLeft, 0);
 
     for (let i = 0; i < rowCount; i++) {
-      const rowIndex = firstRowLocal + i;
+      const rowIndexBig = firstRowBig + BigInt(i);
+      const rowIndex =
+        rowIndexBig > BigInt(Number.MAX_SAFE_INTEGER)
+          ? Number.MAX_SAFE_INTEGER
+          : Number(rowIndexBig);
       const y = yStart + i * this.opts.rowHeight;
       if (y > h) break;
+      const isEven = (rowIndexBig & 1n) === 0n;
       ctx.fillStyle = this.opts.zebra
-        ? (rowIndex & 1) === 0
+        ? isEven
           ? "#ffffff"
           : "#fafafa"
         : "#ffffff";
@@ -266,7 +362,20 @@ export class VirtualCanvasTable {
         ctx.fillRect(0, y, w, this.opts.rowHeight);
       }
 
-      const rowData = this.csv ? this.getCsvRow(rowIndex) : [];
+      let rowData: string[] = [];
+      if (this.csv) {
+        rowData = this.getCsvRow(rowIndex);
+      } else if (this.ds) {
+        if (
+          this.ds.getRowBig &&
+          rowIndexBig > BigInt(Number.MAX_SAFE_INTEGER)
+        ) {
+          const bigGetter = this.ds.getRowBig;
+          rowData = bigGetter ? bigGetter.call(this.ds, rowIndexBig) : [];
+        } else {
+          rowData = this.ds.getRow(rowIndex);
+        }
+      }
       ctx.fillStyle = "#111827";
       ctx.textBaseline = "middle";
       ctx.font = this.opts.font;
@@ -314,6 +423,30 @@ export class VirtualCanvasTable {
     ctx.stroke();
     ctx.restore();
     ctx.restore();
+
+    // Debug overlay (drawn in-canvas)
+    if (this.debugEnabled) {
+      this.debugText = [
+        `domMax=${this.scrollScale.domMax.toFixed(1)}`,
+        `domContent=${domContent.toFixed(1)}`,
+        `firstRow=${firstRowBig.toString()}`,
+        `offsetWithin=${offsetWithin.toFixed(2)}`,
+        `rowCount=${rowCount}`,
+        `tableWidth=${this.tableWidth}`,
+      ].join("\n");
+      ctx.save();
+      ctx.translate(8 - scrollLeft, h - 8);
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, -76, 300, 76);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "11px Geist Mono, ui-monospace, monospace";
+      const lines = this.debugText.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const lineText = lines[i] ?? "";
+        ctx.fillText(lineText, 8, -60 + i * 12);
+      }
+      ctx.restore();
+    }
   }
 
   private getCsvRow(index: number): string[] {

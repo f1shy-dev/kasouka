@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   server: {
@@ -8,10 +9,10 @@ export default defineConfig({
       allow: [path.resolve(__dirname, "../../")],
     },
   },
+  plugins: [tailwindcss()],
   resolve: {
     alias: {
       "@virtual-ts": path.resolve(__dirname, "../../src"),
     },
   },
 });
-

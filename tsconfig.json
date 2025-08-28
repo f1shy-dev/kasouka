@@ -3,18 +3,16 @@
     // Environment setup & latest features
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
-    "module": "Preserve",
+    "module": "ESNext",
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "allowJs": true,
 
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
+    // zshy compatible settings
+    "moduleResolution": "node",
+    "verbatimModuleSyntax": false,
     "noEmit": false,
     "outDir": "./dist",
-
-    // Type generation
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": false,
@@ -30,6 +28,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
+    "esModuleInterop": true,
 
     // Paths
     "paths": {
@@ -37,5 +36,12 @@
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "demos"]
+  "exclude": [
+    "node_modules",
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.d.cts",
+    "**/*.d.mts",
+    "demos"
+  ]
 }

@@ -32,6 +32,4 @@ export interface InitElements {
   viewport: HTMLElement;
   spacer: HTMLElement;
   canvas: HTMLCanvasElement;
-  debugOverlay?: HTMLElement | null;
 }
-

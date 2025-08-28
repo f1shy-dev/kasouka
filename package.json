@@ -1,18 +1,65 @@
 {
-  "name": "virtual-ts",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "bun run build"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+	"name": "kasouka",
+	"type": "module",
+	"private": true,
+	"zshy": {
+		"exports": {
+			".": "./src/index.ts",
+			"./datasource/index": "./src/datasource/index.ts",
+			"./datasource/csv": "./src/datasource/csv.ts",
+			"./datasource/every-uuid": "./src/datasource/every-uuid.ts",
+			"./datasource/virtual": "./src/datasource/virtual.ts"
+		}
+	},
+	"scripts": {
+		"build": "zshy",
+		"prepublishOnly": "bun run build",
+		"watch": "zshy && tsc --watch"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"typescript": "^5",
+		"zshy": "^0.3.5"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"files": [
+		"**/*.js",
+		"**/*.mjs",
+		"**/*.cjs",
+		"**/*.d.ts",
+		"**/*.d.mts",
+		"**/*.d.cts"
+	],
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.cts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./datasource/index": {
+			"types": "./dist/datasource/index.d.cts",
+			"import": "./dist/datasource/index.js",
+			"require": "./dist/datasource/index.cjs"
+		},
+		"./datasource/csv": {
+			"types": "./dist/datasource/csv.d.cts",
+			"import": "./dist/datasource/csv.js",
+			"require": "./dist/datasource/csv.cjs"
+		},
+		"./datasource/every-uuid": {
+			"types": "./dist/datasource/every-uuid.d.cts",
+			"import": "./dist/datasource/every-uuid.js",
+			"require": "./dist/datasource/every-uuid.cjs"
+		},
+		"./datasource/virtual": {
+			"types": "./dist/datasource/virtual.d.cts",
+			"import": "./dist/datasource/virtual.js",
+			"require": "./dist/datasource/virtual.cjs"
+		}
+	}
 }
