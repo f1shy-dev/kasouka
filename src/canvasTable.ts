@@ -118,7 +118,7 @@ export class VirtualCanvasTable {
     ctx.font = theme.bottomRowFont;
     ctx.textBaseline = "middle";
 
-    const moduleY = bottomRowY + bottomRowHeight / 2 + 2;
+    const moduleY = bottomRowY + bottomRowHeight / 2 + 1;
 
     if (!this.opts.bottomRowModules) return;
 
