@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { estimateCsvWidths, estimateDataSourceWidths } from "./measure";
 import type { DataSource } from "./datasource";
+import { ICONS, renderIcon } from "./misc-icons";
 
 export class VirtualCanvasTable {
   private ctx: CanvasRenderingContext2D;
@@ -17,7 +18,6 @@ export class VirtualCanvasTable {
   private colX: number[] = [];
   private colW: number[] = [];
   private tableWidth = 0;
-  private selectedRow = -1;
   private selectedRowBig: bigint | null = null;
   private hoveredRowBig: bigint | null = null;
   private hoverAlpha = 0;
@@ -80,52 +80,6 @@ export class VirtualCanvasTable {
       return { type: module, position: "left" };
     }
     return { position: "left", ...module };
-  }
-
-  private renderGithubIcon(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    size: number
-  ): void {
-    // Simple GitHub icon using SVG path
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(size / 24, size / 24); // GitHub icon is typically 24x24
-
-    // Use current fill style (already set)
-    ctx.beginPath();
-    // Simplified GitHub icon path
-    ctx.moveTo(12, 0.297);
-    ctx.bezierCurveTo(5.394, 0.297, 0, 5.694, 0, 12.297);
-    ctx.bezierCurveTo(0, 17.6, 3.438, 22.097, 8.205, 23.682);
-    ctx.bezierCurveTo(8.805, 23.795, 9.025, 23.424, 9.025, 23.105);
-    ctx.bezierCurveTo(9.025, 22.82, 9.015, 22.065, 9.01, 21.065);
-    ctx.bezierCurveTo(5.672, 21.789, 4.968, 19.455, 4.968, 19.455);
-    ctx.bezierCurveTo(4.421, 18.07, 3.633, 17.7, 3.633, 17.7);
-    ctx.bezierCurveTo(2.546, 16.956, 3.717, 16.971, 3.717, 16.971);
-    ctx.bezierCurveTo(4.922, 17.055, 5.555, 18.207, 5.555, 18.207);
-    ctx.bezierCurveTo(6.625, 20.042, 8.364, 19.512, 9.05, 19.205);
-    ctx.bezierCurveTo(9.158, 18.429, 9.467, 17.9, 9.81, 17.6);
-    ctx.bezierCurveTo(7.145, 17.3, 4.344, 16.268, 4.344, 11.67);
-    ctx.bezierCurveTo(4.344, 10.36, 4.809, 9.29, 5.579, 8.45);
-    ctx.bezierCurveTo(5.444, 8.147, 5.039, 6.927, 5.684, 5.274);
-    ctx.bezierCurveTo(5.684, 5.274, 6.689, 4.952, 8.984, 6.504);
-    ctx.bezierCurveTo(9.944, 6.237, 10.964, 6.105, 11.984, 6.099);
-    ctx.bezierCurveTo(13.004, 6.105, 14.024, 6.237, 14.984, 6.504);
-    ctx.bezierCurveTo(17.264, 4.952, 18.269, 5.274, 18.269, 5.274);
-    ctx.bezierCurveTo(18.914, 6.927, 18.509, 8.147, 18.389, 8.45);
-    ctx.bezierCurveTo(19.154, 9.29, 19.619, 10.36, 19.619, 11.67);
-    ctx.bezierCurveTo(19.619, 16.28, 16.814, 17.295, 14.144, 17.59);
-    ctx.bezierCurveTo(14.564, 17.95, 14.954, 18.686, 14.954, 19.81);
-    ctx.bezierCurveTo(14.954, 21.416, 14.939, 22.706, 14.939, 23.096);
-    ctx.bezierCurveTo(14.939, 23.411, 15.149, 23.786, 15.764, 23.666);
-    ctx.bezierCurveTo(20.565, 22.092, 24, 17.592, 24, 12.297);
-    ctx.bezierCurveTo(24, 5.694, 18.627, 0.297, 12.03, 0.297);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.restore();
   }
 
   private renderBottomRow(
@@ -202,13 +156,13 @@ export class VirtualCanvasTable {
         if (align === "left") {
           iconX = x;
           textX = x + textOffset;
-          this.renderGithubIcon(ctx, iconX, iconY, iconSize);
+          renderIcon(ctx, ICONS.github, iconX, iconY, iconSize);
           ctx.fillText(moduleText, textX, moduleY + 1);
         } else {
           textX = x - moduleWidth;
           iconX = textX - textOffset;
           ctx.fillText(moduleText, textX + 44, moduleY + 1);
-          this.renderGithubIcon(ctx, iconX, iconY, iconSize);
+          renderIcon(ctx, ICONS.github, iconX, iconY, iconSize);
         }
 
         const clickableX = align === "left" ? iconX : iconX;
@@ -271,7 +225,15 @@ export class VirtualCanvasTable {
         break;
       }
       case "total-rows": {
-        const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
+        let totalRows = 0n;
+        if (this.csv && typeof this.csv.rows === "number") {
+          totalRows = BigInt(this.csv.rows);
+        } else if (this.ds && typeof this.ds.getRowCountBig === "function") {
+          const val = this.ds.getRowCountBig();
+          totalRows = val;
+        } else if (this.ds && typeof this.ds.getRowCount === "function") {
+          totalRows = BigInt(this.ds.getRowCount());
+        }
         moduleText = `${totalRows.toLocaleString()} rows`;
         break;
       }
@@ -408,9 +370,7 @@ export class VirtualCanvasTable {
 
       if (y < this.opts.headerHeight) return;
 
-      const row = this.pointToRowIndex(y);
-      this.selectedRow = row;
-      // Also store BigInt identity for correctness beyond Number.MAX_SAFE_INTEGER
+      // Calculate BigInt row identity for correctness beyond Number.MAX_SAFE_INTEGER
       const domContent = Math.max(
         0,
         this.els.viewport.scrollTop - this.opts.headerHeight
@@ -677,25 +637,6 @@ export class VirtualCanvasTable {
     )}px`;
   }
 
-  private pointToRowIndex(y: number): number {
-    const domContent = Math.max(
-      0,
-      this.els.viewport.scrollTop - this.opts.headerHeight
-    );
-    const { firstRowBig, offsetWithin } = this.computeFirstRow(
-      domContent,
-      this.els.viewport.clientHeight
-    );
-    const yStart = this.opts.headerHeight - offsetWithin;
-    const rowInView = Math.max(
-      0,
-      Math.floor((y - yStart) / this.opts.rowHeight)
-    );
-    const idxBig = firstRowBig + BigInt(rowInView);
-    return idxBig > BigInt(Number.MAX_SAFE_INTEGER)
-      ? Number.MAX_SAFE_INTEGER
-      : Number(idxBig);
-  }
   // hover uses pointer position each frame; BigInt row helper removed
 
   private draw(): void {
@@ -819,8 +760,7 @@ export class VirtualCanvasTable {
       }
 
       const isSelected =
-        (this.selectedRowBig != null && rowIndexBig === this.selectedRowBig) ||
-        rowIndex === this.selectedRow;
+        this.selectedRowBig != null && rowIndexBig === this.selectedRowBig;
       if (isSelected) {
         ctx.fillStyle = theme.selectedHighlight(1);
         ctx.fillRect(0, y, highlightW, this.opts.rowHeight);
