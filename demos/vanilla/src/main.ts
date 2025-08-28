@@ -33,7 +33,15 @@ const table = new VirtualCanvasTable(
         "12px Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     },
     scrollerHeight: 32_000,
-    bottomRowModules: ["scroll-position", "total-rows", "fps"],
+    bottomRowModules: [
+      "scroll-position",
+      "total-rows",
+      {
+        type: "github-link",
+        position: "right",
+        url: "https://github.com/f1shy-dev/kasouka",
+      },
+    ],
     bottomRowHeight: 24,
   }
 );
@@ -47,7 +55,7 @@ document.body.appendChild(csvInput);
 function updateTogglePosition() {
   if (!uuidRadio || !toggleBg) return;
 
-  if (uuidRadio.checked) {
+  if (!uuidRadio.checked) {
     toggleBg.style.transform = "translateX(calc(100% + 2px))";
   } else {
     toggleBg.style.transform = "translateX(-2px)";

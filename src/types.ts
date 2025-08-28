@@ -33,7 +33,13 @@ export interface CsvData {
   rows: number; // number of data rows (excludes header)
 }
 
-export type BottomRowModule = "scroll-position" | "total-rows" | "fps";
+export type BottomRowModule = "scroll-position" | "total-rows" | "fps" | "github-link";
+
+export interface BottomRowModuleConfig {
+  type: BottomRowModule;
+  position?: "left" | "right";
+  url?: string; // For github-link module
+}
 
 export interface VirtualTableOptions {
   headerHeight?: number;
@@ -42,7 +48,7 @@ export interface VirtualTableOptions {
   font?: string;
   theme?: Theme;
   scrollerHeight?: number;
-  bottomRowModules?: BottomRowModule[];
+  bottomRowModules?: (BottomRowModule | BottomRowModuleConfig)[];
   bottomRowHeight?: number;
 }
 

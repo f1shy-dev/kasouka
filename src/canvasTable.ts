@@ -5,6 +5,7 @@ import type {
   VirtualTableOptions,
   Theme,
   BottomRowModule,
+  BottomRowModuleConfig,
 } from "./types";
 import { estimateCsvWidths, estimateDataSourceWidths } from "./measure";
 import type { DataSource } from "./datasource";
@@ -29,6 +30,13 @@ export class VirtualCanvasTable {
   private debugText = "";
   private dynamicWidths?: number[];
   private SAFE_CONTENT_PX = 16_000_000;
+  private bottomRowClickableAreas: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    url: string;
+  }> = [];
 
   private getTheme(): Required<Theme> {
     const defaultTheme: Required<Theme> = {
@@ -65,6 +73,61 @@ export class VirtualCanvasTable {
     );
   }
 
+  private normalizeBottomRowModule(
+    module: BottomRowModule | BottomRowModuleConfig
+  ): BottomRowModuleConfig {
+    if (typeof module === "string") {
+      return { type: module, position: "left" };
+    }
+    return { position: "left", ...module };
+  }
+
+  private renderGithubIcon(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number
+  ): void {
+    // Simple GitHub icon using SVG path
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(size / 24, size / 24); // GitHub icon is typically 24x24
+
+    // Use current fill style (already set)
+    ctx.beginPath();
+    // Simplified GitHub icon path
+    ctx.moveTo(12, 0.297);
+    ctx.bezierCurveTo(5.394, 0.297, 0, 5.694, 0, 12.297);
+    ctx.bezierCurveTo(0, 17.6, 3.438, 22.097, 8.205, 23.682);
+    ctx.bezierCurveTo(8.805, 23.795, 9.025, 23.424, 9.025, 23.105);
+    ctx.bezierCurveTo(9.025, 22.82, 9.015, 22.065, 9.01, 21.065);
+    ctx.bezierCurveTo(5.672, 21.789, 4.968, 19.455, 4.968, 19.455);
+    ctx.bezierCurveTo(4.421, 18.07, 3.633, 17.7, 3.633, 17.7);
+    ctx.bezierCurveTo(2.546, 16.956, 3.717, 16.971, 3.717, 16.971);
+    ctx.bezierCurveTo(4.922, 17.055, 5.555, 18.207, 5.555, 18.207);
+    ctx.bezierCurveTo(6.625, 20.042, 8.364, 19.512, 9.05, 19.205);
+    ctx.bezierCurveTo(9.158, 18.429, 9.467, 17.9, 9.81, 17.6);
+    ctx.bezierCurveTo(7.145, 17.3, 4.344, 16.268, 4.344, 11.67);
+    ctx.bezierCurveTo(4.344, 10.36, 4.809, 9.29, 5.579, 8.45);
+    ctx.bezierCurveTo(5.444, 8.147, 5.039, 6.927, 5.684, 5.274);
+    ctx.bezierCurveTo(5.684, 5.274, 6.689, 4.952, 8.984, 6.504);
+    ctx.bezierCurveTo(9.944, 6.237, 10.964, 6.105, 11.984, 6.099);
+    ctx.bezierCurveTo(13.004, 6.105, 14.024, 6.237, 14.984, 6.504);
+    ctx.bezierCurveTo(17.264, 4.952, 18.269, 5.274, 18.269, 5.274);
+    ctx.bezierCurveTo(18.914, 6.927, 18.509, 8.147, 18.389, 8.45);
+    ctx.bezierCurveTo(19.154, 9.29, 19.619, 10.36, 19.619, 11.67);
+    ctx.bezierCurveTo(19.619, 16.28, 16.814, 17.295, 14.144, 17.59);
+    ctx.bezierCurveTo(14.564, 17.95, 14.954, 18.686, 14.954, 19.81);
+    ctx.bezierCurveTo(14.954, 21.416, 14.939, 22.706, 14.939, 23.096);
+    ctx.bezierCurveTo(14.939, 23.411, 15.149, 23.786, 15.764, 23.666);
+    ctx.bezierCurveTo(20.565, 22.092, 24, 17.592, 24, 12.297);
+    ctx.bezierCurveTo(24, 5.694, 18.627, 0.297, 12.03, 0.297);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
   private renderBottomRow(
     ctx: CanvasRenderingContext2D,
     w: number,
@@ -76,6 +139,9 @@ export class VirtualCanvasTable {
     const bottomRowHeight = this.getBottomRowHeight();
     const bottomRowY = h - bottomRowHeight;
     const theme = this.getTheme();
+
+    // Clear clickable areas
+    this.bottomRowClickableAreas = [];
 
     // Draw bottom row background
     ctx.fillStyle = theme.bottomRowBg;
@@ -97,49 +163,130 @@ export class VirtualCanvasTable {
     ctx.fillStyle = theme.bottomRowText;
     ctx.font = theme.bottomRowFont;
     ctx.textBaseline = "middle";
-    ctx.textAlign = "left";
 
     const moduleY = bottomRowY + bottomRowHeight / 2 + 1;
-    let moduleX = 8 - scrollLeft;
 
-    if (this.opts.bottomRowModules) {
-      for (const module of this.opts.bottomRowModules) {
-        let moduleText = "";
+    if (!this.opts.bottomRowModules) return;
 
-        switch (module) {
-          case "scroll-position": {
-            const scrollPercent =
-              this.els.viewport.scrollTop > 0
-                ? Math.round(
-                    (this.els.viewport.scrollTop /
-                      (this.els.spacer.clientHeight -
-                        this.els.viewport.clientHeight)) *
-                      100
-                  )
-                : 0;
-            moduleText = `${scrollPercent}%`;
-            break;
-          }
-          case "total-rows": {
-            const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
-            moduleText = `${totalRows.toLocaleString()} rows`;
-            break;
-          }
-          case "fps": {
-            moduleText = "60 fps"; // Placeholder for actual FPS calculation
-            break;
-          }
+    // Separate left and right modules
+    const leftModules: BottomRowModuleConfig[] = [];
+    const rightModules: BottomRowModuleConfig[] = [];
+
+    for (const rawModule of this.opts.bottomRowModules) {
+      const module = this.normalizeBottomRowModule(rawModule);
+      (module.position === "right" ? rightModules : leftModules).push(module);
+    }
+
+    const renderModule = (
+      module: BottomRowModuleConfig,
+      x: number,
+      align: "left" | "right",
+      isReversed = false
+    ): number => {
+      const { moduleText, moduleWidth } = this.getModuleTextAndWidth(
+        ctx,
+        module
+      );
+      if (!moduleText) return x;
+
+      const spacing = 16;
+      const iconSize = 14;
+
+      if (module.type === "github-link" && module.url) {
+        const iconY = moduleY - iconSize / 2;
+        const textOffset = iconSize + 4;
+
+        let iconX: number;
+        let textX: number;
+
+        if (align === "left") {
+          iconX = x;
+          textX = x + textOffset;
+          this.renderGithubIcon(ctx, iconX, iconY, iconSize);
+          ctx.fillText(moduleText, textX, moduleY + 1);
+        } else {
+          textX = x - moduleWidth;
+          iconX = textX - textOffset;
+          ctx.fillText(moduleText, textX + 44, moduleY + 1);
+          this.renderGithubIcon(ctx, iconX, iconY, iconSize);
         }
 
-        if (moduleText) {
-          ctx.fillText(moduleText, moduleX, moduleY);
-          const textWidth = ctx.measureText(moduleText).width;
-          moduleX += textWidth + 16; // spacing between modules
-        }
+        const clickableX = align === "left" ? iconX : iconX;
+        this.bottomRowClickableAreas.push({
+          x: clickableX + scrollLeft,
+          y: bottomRowY,
+          width: iconSize + 4 + moduleWidth,
+          height: bottomRowHeight,
+          url: module.url,
+        });
+
+        return x + (isReversed ? -1 : 1) * (textOffset + moduleWidth + spacing);
       }
+
+      if (align === "left") {
+        ctx.fillText(moduleText, x, moduleY);
+        return x + moduleWidth + spacing;
+      }
+      ctx.fillText(moduleText, x, moduleY);
+      return x - moduleWidth - spacing;
+    };
+
+    // Render left modules
+    ctx.textAlign = "left";
+    let leftX = 8 - scrollLeft;
+    for (const module of leftModules) {
+      leftX = renderModule(module, leftX, "left");
+    }
+
+    // Render right modules
+    ctx.textAlign = "right";
+    let rightX = w - 8 + scrollLeft;
+    for (let i = rightModules.length - 1; i >= 0; i--) {
+      const module = rightModules[i];
+      if (!module) continue;
+      rightX = renderModule(module, rightX, "right", true);
     }
 
     ctx.restore();
+  }
+
+  private getModuleTextAndWidth(
+    ctx: CanvasRenderingContext2D,
+    module: BottomRowModuleConfig
+  ): { moduleText: string; moduleWidth: number } {
+    let moduleText = "";
+
+    switch (module.type) {
+      case "scroll-position": {
+        const scrollPercent =
+          this.els.viewport.scrollTop > 0
+            ? Math.round(
+                (this.els.viewport.scrollTop /
+                  (this.els.spacer.clientHeight -
+                    this.els.viewport.clientHeight)) *
+                  100
+              )
+            : 0;
+        moduleText = `${scrollPercent}%`;
+        break;
+      }
+      case "total-rows": {
+        const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
+        moduleText = `${totalRows.toLocaleString()} rows`;
+        break;
+      }
+      case "fps": {
+        moduleText = "60 fps"; // Placeholder for actual FPS calculation
+        break;
+      }
+      case "github-link": {
+        moduleText = "GitHub";
+        break;
+      }
+    }
+
+    const moduleWidth = moduleText ? ctx.measureText(moduleText).width : 0;
+    return { moduleText, moduleWidth };
   }
 
   constructor(
@@ -153,7 +300,7 @@ export class VirtualCanvasTable {
       theme?: Theme;
       scrollerHeight?: number;
       bottomRowHeight?: number;
-      bottomRowModules?: BottomRowModule[];
+      bottomRowModules?: (BottomRowModule | BottomRowModuleConfig)[];
     }
   ) {
     this.SAFE_CONTENT_PX = opts.scrollerHeight ?? this.SAFE_CONTENT_PX;
@@ -232,18 +379,35 @@ export class VirtualCanvasTable {
       },
       { passive: true }
     );
-    this.els.canvas.addEventListener("click", (e) => {
-      const rect = this.els.canvas.getBoundingClientRect();
+    // Use viewport for click events since canvas has pointer-events: none
+    this.els.viewport.addEventListener("click", (e) => {
+      const rect = this.els.viewport.getBoundingClientRect();
+      const x = e.clientX - rect.left + this.els.viewport.scrollLeft;
       const y = e.clientY - rect.top;
       const bottomRowHeight = this.hasBottomRow()
         ? this.getBottomRowHeight()
         : 0;
       const bottomRowStart = this.els.viewport.clientHeight - bottomRowHeight;
-      if (
-        y < this.opts.headerHeight ||
-        (this.hasBottomRow() && y >= bottomRowStart)
-      )
+
+      // Check if click is in bottom row
+      if (this.hasBottomRow() && y >= bottomRowStart) {
+        // Check if click is on any clickable area
+        for (const area of this.bottomRowClickableAreas) {
+          if (
+            x >= area.x &&
+            x <= area.x + area.width &&
+            y >= area.y &&
+            y <= area.y + area.height
+          ) {
+            window.open(area.url, "_blank");
+            return;
+          }
+        }
         return;
+      }
+
+      if (y < this.opts.headerHeight) return;
+
       const row = this.pointToRowIndex(y);
       this.selectedRow = row;
       // Also store BigInt identity for correctness beyond Number.MAX_SAFE_INTEGER
@@ -267,16 +431,13 @@ export class VirtualCanvasTable {
     this.els.viewport.addEventListener(
       "mousemove",
       (e) => {
-        const rect = this.els.canvas.getBoundingClientRect();
+        const rect = this.els.viewport.getBoundingClientRect();
         const y = e.clientY - rect.top;
         const bottomRowHeight = this.hasBottomRow()
           ? this.getBottomRowHeight()
           : 0;
         const bottomRowStart = this.els.viewport.clientHeight - bottomRowHeight;
-        if (
-          y < this.opts.headerHeight ||
-          (this.hasBottomRow() && y >= bottomRowStart)
-        ) {
+        if (y < this.opts.headerHeight) {
           if (this.hoveredRowBig != null) {
             this.hoveredRowBig = null;
             this.needsDraw = true;
@@ -284,6 +445,40 @@ export class VirtualCanvasTable {
           }
           return;
         }
+
+        // Handle bottom row hover
+        if (this.hasBottomRow() && y >= bottomRowStart) {
+          // Check if hovering over clickable area
+          let overClickableArea = false;
+          const x = e.clientX - rect.left + this.els.viewport.scrollLeft;
+
+          for (const area of this.bottomRowClickableAreas) {
+            if (
+              x >= area.x &&
+              x <= area.x + area.width &&
+              y >= area.y &&
+              y <= area.y + area.height
+            ) {
+              overClickableArea = true;
+              break;
+            }
+          }
+
+          // Use viewport cursor since canvas has pointer-events: none
+          this.els.viewport.style.cursor = overClickableArea
+            ? "pointer"
+            : "default";
+
+          if (this.hoveredRowBig != null) {
+            this.hoveredRowBig = null;
+            this.needsDraw = true;
+            this.schedule();
+          }
+          return;
+        }
+
+        // Reset cursor when not over bottom row
+        this.els.viewport.style.cursor = "default";
         const domContent = Math.max(
           0,
           this.els.viewport.scrollTop - this.opts.headerHeight
