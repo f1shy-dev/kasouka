@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>List Virtual</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+          Consolas, "Liberation Mono", "Courier New", monospace;
+        color: #111827;
+        background: #ffffff;
+        overflow: hidden;
+      }
+      h1 {
+        margin: 12px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px 0 12px;
+        font-size: 12px;
+        color: #374151;
+      }
+      .viewport {
+        position: relative;
+        height: calc(100vh - 60px);
+        overflow: auto;
+        background: #ffffff;
+        border-top: 1px solid #e5e7eb;
+        overscroll-behavior: contain;
+      }
+      #spacer {
+        width: 100%;
+        height: 100%;
+      }
+      #layer {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        z-index: 10;
+        background: transparent;
+        pointer-events: none;
+      }
+      #debugOverlay {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #ffffff;
+        font-size: 11px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        z-index: 30;
+        pointer-events: none;
+        white-space: pre;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>List Virtual</h1>
+    <div class="controls">
+      <label
+        >CSV: <input id="csvInput" type="file" accept=".csv,text/csv"
+      /></label>
+      <label><input id="debugToggle" type="checkbox" /> Debug overlay</label>
+    </div>
+    <div id="viewport" class="viewport">
+      <div id="spacer"></div>
+      <canvas id="layer"></canvas>
+    </div>
+    <div id="debugOverlay"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
