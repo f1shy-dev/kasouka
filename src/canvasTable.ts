@@ -118,7 +118,7 @@ export class VirtualCanvasTable {
     ctx.font = theme.bottomRowFont;
     ctx.textBaseline = "middle";
 
-    const moduleY = bottomRowY + bottomRowHeight / 2 + 1;
+    const moduleY = bottomRowY + bottomRowHeight / 2 + 2;
 
     if (!this.opts.bottomRowModules) return;
 
@@ -137,17 +137,14 @@ export class VirtualCanvasTable {
       align: "left" | "right",
       isReversed = false
     ): number => {
-      const { moduleText, moduleWidth } = this.getModuleTextAndWidth(
-        ctx,
-        module
-      );
-      if (!moduleText) return x;
-
       const spacing = 16;
       const iconSize = 14;
 
       if (module.type === "github-link" && module.url) {
-        const iconY = moduleY - iconSize / 2;
+        const moduleText = "GitHub";
+        const moduleWidth = ctx.measureText(moduleText).width;
+
+        const iconY = moduleY - iconSize / 2 - 1;
         const textOffset = iconSize + 4;
 
         let iconX: number;
@@ -157,11 +154,11 @@ export class VirtualCanvasTable {
           iconX = x;
           textX = x + textOffset;
           renderIcon(ctx, ICONS.github, iconX, iconY, iconSize);
-          ctx.fillText(moduleText, textX, moduleY + 1);
+          ctx.fillText(moduleText, textX, moduleY);
         } else {
           textX = x - moduleWidth;
           iconX = textX - textOffset;
-          ctx.fillText(moduleText, textX + 44, moduleY + 1);
+          ctx.fillText(moduleText, textX + 44, moduleY);
           renderIcon(ctx, ICONS.github, iconX, iconY, iconSize);
         }
 
@@ -177,12 +174,78 @@ export class VirtualCanvasTable {
         return x + (isReversed ? -1 : 1) * (textOffset + moduleWidth + spacing);
       }
 
-      if (align === "left") {
-        ctx.fillText(moduleText, x, moduleY);
-        return x + moduleWidth + spacing;
+      if (module.type === "scroll-position") {
+        const scrollPercent =
+          this.els.viewport.scrollTop > 0
+            ? Math.round(
+                (this.els.viewport.scrollTop /
+                  (this.els.spacer.clientHeight -
+                    this.els.viewport.clientHeight)) *
+                  100
+              )
+            : 0;
+        const moduleText = `${scrollPercent}%`;
+        const moduleWidth = ctx.measureText(moduleText).width;
+
+        const iconY = moduleY - iconSize / 2;
+        const textOffset = iconSize + 4;
+
+        let iconX: number;
+        let textX: number;
+
+        if (align === "left") {
+          iconX = x;
+          textX = x + textOffset;
+          renderIcon(ctx, ICONS["loading-circle"], iconX, iconY, iconSize, [
+            scrollPercent,
+          ]);
+          ctx.fillText(moduleText, textX, moduleY);
+          return x + textOffset + moduleWidth + spacing;
+        }
+
+        textX = x - moduleWidth;
+        iconX = textX - textOffset;
+        ctx.fillText(moduleText, textX, moduleY);
+        renderIcon(ctx, ICONS["loading-circle"], iconX, iconY, iconSize, [
+          scrollPercent,
+        ]);
+        return x - (textOffset + moduleWidth + spacing);
       }
-      ctx.fillText(moduleText, x, moduleY);
-      return x - moduleWidth - spacing;
+
+      if (module.type === "total-rows") {
+        let totalRows = 0n;
+        if (this.csv && typeof this.csv.rows === "number") {
+          totalRows = BigInt(this.csv.rows);
+        } else if (this.ds && typeof this.ds.getRowCountBig === "function") {
+          const val = this.ds.getRowCountBig();
+          totalRows = val;
+        } else if (this.ds && typeof this.ds.getRowCount === "function") {
+          totalRows = BigInt(this.ds.getRowCount());
+        }
+        const moduleText = `${totalRows.toLocaleString()} rows`;
+        const moduleWidth = ctx.measureText(moduleText).width;
+
+        if (align === "left") {
+          ctx.fillText(moduleText, x, moduleY);
+          return x + moduleWidth + spacing;
+        }
+        ctx.fillText(moduleText, x, moduleY);
+        return x - moduleWidth - spacing;
+      }
+
+      if (module.type === "fps") {
+        const moduleText = "60 fps"; // Placeholder for actual FPS calculation
+        const moduleWidth = ctx.measureText(moduleText).width;
+
+        if (align === "left") {
+          ctx.fillText(moduleText, x, moduleY);
+          return x + moduleWidth + spacing;
+        }
+        ctx.fillText(moduleText, x, moduleY);
+        return x - moduleWidth - spacing;
+      }
+
+      return x;
     };
 
     // Render left modules
@@ -202,53 +265,6 @@ export class VirtualCanvasTable {
     }
 
     ctx.restore();
-  }
-
-  private getModuleTextAndWidth(
-    ctx: CanvasRenderingContext2D,
-    module: BottomRowModuleConfig
-  ): { moduleText: string; moduleWidth: number } {
-    let moduleText = "";
-
-    switch (module.type) {
-      case "scroll-position": {
-        const scrollPercent =
-          this.els.viewport.scrollTop > 0
-            ? Math.round(
-                (this.els.viewport.scrollTop /
-                  (this.els.spacer.clientHeight -
-                    this.els.viewport.clientHeight)) *
-                  100
-              )
-            : 0;
-        moduleText = `${scrollPercent}%`;
-        break;
-      }
-      case "total-rows": {
-        let totalRows = 0n;
-        if (this.csv && typeof this.csv.rows === "number") {
-          totalRows = BigInt(this.csv.rows);
-        } else if (this.ds && typeof this.ds.getRowCountBig === "function") {
-          const val = this.ds.getRowCountBig();
-          totalRows = val;
-        } else if (this.ds && typeof this.ds.getRowCount === "function") {
-          totalRows = BigInt(this.ds.getRowCount());
-        }
-        moduleText = `${totalRows.toLocaleString()} rows`;
-        break;
-      }
-      case "fps": {
-        moduleText = "60 fps"; // Placeholder for actual FPS calculation
-        break;
-      }
-      case "github-link": {
-        moduleText = "GitHub";
-        break;
-      }
-    }
-
-    const moduleWidth = moduleText ? ctx.measureText(moduleText).width : 0;
-    return { moduleText, moduleWidth };
   }
 
   constructor(

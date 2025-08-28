@@ -2,16 +2,28 @@ type CanvasCommand =
   | "beginPath"
   | ["moveTo", number, number]
   | ["bezierCurveTo", number, number, number, number, number, number]
+  | ["arc", number, number, number, number, number]
+  | "stroke"
+  | ["strokeStyle", string]
+  | ["fillStyle", string]
+  | ["lineWidth", number]
+  | ["globalAlpha", number]
+  | ["lineCap", "round"]
   | "closePath"
   | "fill";
 
-type CanvasIcon = {
+type CanvasIcon<T extends unknown[]> = {
   width: number;
   height: number;
-  commands: CanvasCommand[];
+  commands: CanvasCommand[] | ((...inputs: T) => CanvasCommand[]);
 };
 
-export const ICONS = {
+type CanvasIconMap = {
+  github: CanvasIcon<[]>;
+  "loading-circle": CanvasIcon<[number]>;
+};
+
+export const ICONS: CanvasIconMap = {
   github: {
     width: 24,
     height: 24,
@@ -47,29 +59,91 @@ export const ICONS = {
       "fill",
     ],
   },
-} as const satisfies Record<string, CanvasIcon>;
+  "loading-circle": {
+    width: 24,
+    height: 24,
+    commands: (percent: number) =>
+      [
+        ["strokeStyle", "currentColor"],
+        ["globalAlpha", 0.3],
+        ["lineWidth", 3],
+        "beginPath",
+        ["arc", 12, 12, 9, 0, 2 * Math.PI],
+        "stroke",
+        ["globalAlpha", 1],
+        ["lineCap", "round"],
+        "beginPath",
+        [
+          "arc",
+          12,
+          12,
+          9,
+          -Math.PI / 2,
+          -Math.PI / 2 + (percent / 100) * 2 * Math.PI,
+        ],
+        "stroke",
+      ] as const satisfies CanvasCommand[],
+  },
+};
 
-export const renderIcon = (
+export const renderIcon = <T extends unknown[]>(
   ctx: CanvasRenderingContext2D,
-  icon: CanvasIcon,
+  icon: CanvasIcon<T>,
   x: number,
   y: number,
-  size: number
+  size: number,
+  inputs?: T
 ): void => {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(size / icon.width, size / icon.height);
-  for (const c of icon.commands) {
+  const commands =
+    typeof icon.commands === "function"
+      ? inputs
+        ? icon.commands(...inputs)
+        : []
+      : icon.commands;
+  for (const c of commands) {
     if (c === "beginPath") {
       ctx.beginPath();
     } else if (c === "closePath") {
       ctx.closePath();
     } else if (c === "fill") {
       ctx.fill();
-    } else if (c[0] === "moveTo") {
-      ctx.moveTo(c[1], c[2]);
-    } else if (c[0] === "bezierCurveTo") {
-      ctx.bezierCurveTo(c[1], c[2], c[3], c[4], c[5], c[6]);
+    } else if (c === "stroke") {
+      ctx.stroke();
+    } else if (Array.isArray(c)) {
+      const [command, ...args] = c;
+      if (command === "moveTo") {
+        ctx.moveTo(args[0] as number, args[1] as number);
+      } else if (command === "bezierCurveTo") {
+        ctx.bezierCurveTo(
+          args[0] as number,
+          args[1] as number,
+          args[2] as number,
+          args[3] as number,
+          args[4] as number,
+          args[5] as number
+        );
+      } else if (command === "arc") {
+        ctx.arc(
+          args[0] as number,
+          args[1] as number,
+          args[2] as number,
+          args[3] as number,
+          args[4] as number
+        );
+      } else if (command === "strokeStyle") {
+        ctx.strokeStyle = args[0] as string;
+      } else if (command === "fillStyle") {
+        ctx.fillStyle = args[0] as string;
+      } else if (command === "globalAlpha") {
+        ctx.globalAlpha = args[0] as number;
+      } else if (command === "lineWidth") {
+        ctx.lineWidth = args[0] as number;
+      } else if (command === "lineCap") {
+        ctx.lineCap = args[0] as CanvasLineCap;
+      }
     }
   }
   ctx.restore();
