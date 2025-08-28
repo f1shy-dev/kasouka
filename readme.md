@@ -2,32 +2,17 @@
 
 virtual canvas table for large datasets
 
+![example](./example.png)
+
 ## features
 
-- canvas-based rendering for performance
-- virtual scrolling for millions of rows
-- csv support with dynamic width estimation
-- datasource abstraction for custom data
-- typescript support
+- silky-smooth canvas-based rendering
+- millions of millions of rows smooth scrolling
+- datasource abstraction
+  - `/virtual` - virtual data example, derived from row index
+  - `/every-uuid` - another virtual data example - all 2^122 uuids
+  - `/csv` - for small scale csv data. (web-workers/larger csvs coming soon)
 
-## usage
-
-```ts
-import { VirtualCanvasTable } from 'kasouka';
-
-const table = new VirtualCanvasTable(canvas, {
-  rowHeight: 24,
-  headerHeight: 32
-});
-
-// load csv
-table.loadCsv(csvData);
-
-// or use custom datasource
-table.setDataSource(dataSource);
-```
 
 ## demo
-
-// Start of Selection
-check out [`demos/vanilla`](demos/vanilla) for a working example
+check out [`demos/vanilla`](https://kasouka.vercel.app) for a working example
