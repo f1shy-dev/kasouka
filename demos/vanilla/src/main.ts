@@ -3,7 +3,6 @@ import { VirtualCanvasTable, makeCsvData } from "kasouka";
 import { EveryUUIDVirtualDataSource } from "kasouka/datasource/every-uuid";
 
 import { CsvDataSource } from "kasouka/datasource/csv";
-import { ExampleVirtualDataSource } from "kasouka/datasource/virtual";
 const $ = <T extends HTMLElement>(selector: string) =>
   document.querySelector(selector) as T | null;
 
@@ -25,7 +24,13 @@ const table = new VirtualCanvasTable(
     rowHeight: 24,
     overscan: 4,
     font: "14px Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    zebra: false,
+    theme: {
+      rowBg: "#ffffff",
+      selectedHighlight: () => "hsl(260deg, 91.2%, 59.8%, 0.15)",
+      hoverHighlight: (alpha: number) => `hsl(260deg, 91.2%, 59.8%,${alpha})`,
+      hoverSeparator: false,
+    },
+    scrollerHeight: 32_000,
   }
 );
 

@@ -1,11 +1,25 @@
 export type TextAlign = "left" | "right" | "center";
 
+export interface Theme {
+  headerBg?: string;
+  headerText?: string;
+  headerBorder?: string;
+  rowBg?: string | ((rowIndex: bigint) => string);
+  rowText?: string;
+  rowSeparator?: string;
+  columnSeparator?: string;
+  selectedHighlight?: (alpha: number) => string;
+  hoverHighlight?: (alpha: number) => string;
+  hoverSeparator?: boolean;
+}
+
 export interface Column {
   key: string;
   label: string;
   min?: number;
   weight?: number;
   align?: TextAlign;
+  theme?: Partial<Theme>;
 }
 
 export interface CsvData {
@@ -20,7 +34,8 @@ export interface VirtualTableOptions {
   rowHeight?: number;
   overscan?: number;
   font?: string;
-  zebra?: boolean;
+  theme?: Theme;
+  scrollerHeight?: number;
 }
 
 export interface MeasureResult {

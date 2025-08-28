@@ -3,6 +3,7 @@ import type {
   CsvData,
   InitElements,
   VirtualTableOptions,
+  Theme,
 } from "./types";
 import { estimateCsvWidths, estimateDataSourceWidths } from "./measure";
 import type { DataSource } from "./datasource";
@@ -26,11 +27,39 @@ export class VirtualCanvasTable {
   private debugEnabled = false;
   private debugText = "";
   private dynamicWidths?: number[];
+  private SAFE_CONTENT_PX = 16_000_000;
+
+  private getTheme(): Required<Theme> {
+    const defaultTheme: Required<Theme> = {
+      headerBg: "#f3f4f6",
+      headerText: "#111827",
+      headerBorder: "#d1d5db",
+      rowBg: (rowIndex: bigint) =>
+        (rowIndex & 1n) === 0n ? "#ffffff" : "#fafafa",
+      rowText: "#111827",
+      rowSeparator: "#f1f5f9",
+      columnSeparator: "#e5e7eb",
+      selectedHighlight: () => "rgba(59,130,246,0.15)",
+      hoverHighlight: (alpha: number) => `rgba(59,130,246,${alpha})`,
+      hoverSeparator: true,
+    };
+
+    return {
+      ...defaultTheme,
+      ...this.opts.theme,
+    };
+  }
 
   constructor(
     private els: InitElements,
-    private opts: Required<VirtualTableOptions>
+    private opts: Required<
+      Omit<VirtualTableOptions, "theme" | "scrollerHeight">
+    > & {
+      theme?: Theme;
+      scrollerHeight?: number;
+    }
   ) {
+    this.SAFE_CONTENT_PX = opts.scrollerHeight ?? this.SAFE_CONTENT_PX;
     const ctx = els.canvas.getContext("2d", { alpha: true });
     if (!ctx) throw new Error("2D canvas not supported");
     this.ctx = ctx;
@@ -56,7 +85,10 @@ export class VirtualCanvasTable {
       })),
     ]);
     this.updateScrollScale();
-    const safeContentPx = Math.max(0, 16000000 - this.opts.headerHeight);
+    const safeContentPx = Math.max(
+      0,
+      this.SAFE_CONTENT_PX - this.opts.headerHeight
+    );
     this.els.spacer.style.height = `${
       this.opts.headerHeight + safeContentPx
     }px`;
@@ -69,7 +101,10 @@ export class VirtualCanvasTable {
     this.csv = undefined;
     this.setColumns(ds.getColumns());
     this.updateScrollScale();
-    const safeContent = Math.max(0, 16000000 - this.opts.headerHeight);
+    const safeContent = Math.max(
+      0,
+      this.SAFE_CONTENT_PX - this.opts.headerHeight
+    );
     this.els.spacer.style.height = `${this.opts.headerHeight + safeContent}px`;
     this.els.viewport.scrollTop = this.opts.headerHeight;
     this.schedule();
@@ -258,7 +293,10 @@ export class VirtualCanvasTable {
     );
     const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
     const virt = Math.max(0, totalRows * this.opts.rowHeight - visible);
-    const safeContentPx = Math.max(0, 16000000 - this.opts.headerHeight);
+    const safeContentPx = Math.max(
+      0,
+      this.SAFE_CONTENT_PX - this.opts.headerHeight
+    );
     // Align DOM scroll range with the coordinate used in computeFirstRow,
     // which is based on (scrollTop - headerHeight). The maximum value of
     // that expression is (safeContentPx - viewport.clientHeight).
@@ -359,12 +397,13 @@ export class VirtualCanvasTable {
     const hoverTarget = this.hoveredRowBig != null ? 1 : 0;
     this.hoverAlpha += (hoverTarget - this.hoverAlpha) * 0.25;
 
+    const theme = this.getTheme();
     ctx.clearRect(0, 0, w, h);
 
     // header bg
-    ctx.fillStyle = "#f3f4f6";
+    ctx.fillStyle = theme.headerBg;
     ctx.fillRect(0, 0, w, this.opts.headerHeight);
-    ctx.strokeStyle = "#d1d5db";
+    ctx.strokeStyle = theme.headerBorder;
     ctx.beginPath();
     ctx.moveTo(0, this.opts.headerHeight + 0.5);
     ctx.lineTo(w, this.opts.headerHeight + 0.5);
@@ -377,7 +416,7 @@ export class VirtualCanvasTable {
     ctx.clip();
     ctx.save();
     ctx.translate(-scrollLeft, 0);
-    ctx.fillStyle = "#111827";
+    ctx.fillStyle = theme.headerText;
     ctx.font = this.opts.font;
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
@@ -439,19 +478,18 @@ export class VirtualCanvasTable {
           : Number(rowIndexBig);
       const y = yStart + i * this.opts.rowHeight;
       if (y > h) break;
-      const isEven = (rowIndexBig & 1n) === 0n;
-      ctx.fillStyle = this.opts.zebra
-        ? isEven
-          ? "#ffffff"
-          : "#fafafa"
-        : "#ffffff";
+      const rowBg =
+        typeof theme.rowBg === "function"
+          ? theme.rowBg(rowIndexBig)
+          : theme.rowBg;
+      ctx.fillStyle = rowBg;
       ctx.fillRect(0, y, this.tableWidth, this.opts.rowHeight);
 
       const isSelected =
         (this.selectedRowBig != null && rowIndexBig === this.selectedRowBig) ||
         rowIndex === this.selectedRow;
       if (isSelected) {
-        ctx.fillStyle = "rgba(59,130,246,0.15)";
+        ctx.fillStyle = theme.selectedHighlight(1);
         ctx.fillRect(0, y, highlightW, this.opts.rowHeight);
       }
       // hover highlight (under text), skip if selected; use BigInt identity
@@ -460,7 +498,7 @@ export class VirtualCanvasTable {
       if (isHover && !isSelected) {
         const alpha = Math.max(0, Math.min(1, this.hoverAlpha)) * 0.1;
         if (alpha > 0.002) {
-          ctx.fillStyle = `rgba(59,130,246,${alpha})`;
+          ctx.fillStyle = theme.hoverHighlight(alpha);
           ctx.fillRect(0, y, highlightW, this.opts.rowHeight);
         }
       }
@@ -479,18 +517,27 @@ export class VirtualCanvasTable {
           rowData = this.ds.getRow(rowIndex);
         }
       }
-      ctx.fillStyle = "#111827";
+      ctx.fillStyle = theme.rowText;
       ctx.textBaseline = "middle";
       ctx.font = this.opts.font;
       for (let c = 0; c < this.columns.length; c++) {
         const cw = this.colW[c] ?? 0;
         const cx = this.colX[c] ?? 0;
+        const column = this.columns[c];
+        const columnTheme = column?.theme;
+
         ctx.save();
         ctx.beginPath();
         ctx.rect(cx + 1, y + 1, Math.max(0, cw - 2), this.opts.rowHeight - 2);
         ctx.clip();
+
+        // Apply column-level theme overrides
+        if (columnTheme?.rowText) {
+          ctx.fillStyle = columnTheme.rowText;
+        }
+
         const text = rowData[c] ?? "";
-        if ((this.columns[c]?.align ?? "left") === "right") {
+        if ((column?.align ?? "left") === "right") {
           ctx.textAlign = "right";
           ctx.fillText(text, cx + (cw - 8), y + this.opts.rowHeight / 2);
         } else {
@@ -513,7 +560,7 @@ export class VirtualCanvasTable {
     }
 
     // vertical grid
-    ctx.strokeStyle = "#e5e7eb";
+    ctx.strokeStyle = theme.columnSeparator;
     ctx.beginPath();
     for (let i = 0; i < this.columns.length; i++) {
       const x = (this.colX[i] ?? 0) + (this.colW[i] ?? 0) + 0.5;
@@ -523,11 +570,23 @@ export class VirtualCanvasTable {
     ctx.stroke();
 
     // row separators
-    ctx.strokeStyle = "#f1f5f9";
+    ctx.strokeStyle = theme.rowSeparator;
     ctx.beginPath();
     for (let i = 0; i < rowCount; i++) {
+      const rowIndexBig = firstRowBig + BigInt(i);
       const y = yStart + i * this.opts.rowHeight + this.opts.rowHeight + 0.5;
       if (y > h) break;
+
+      // Skip separator if hoverSeparator is false and this row or next row is hovered
+      if (!theme.hoverSeparator && hoveredRowBigForFrame != null) {
+        const isCurrentRowHovered = rowIndexBig === hoveredRowBigForFrame;
+        const isNextRowHovered =
+          rowIndexBig + BigInt(1) === hoveredRowBigForFrame;
+        if (isCurrentRowHovered || isNextRowHovered) {
+          continue;
+        }
+      }
+
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
     }
