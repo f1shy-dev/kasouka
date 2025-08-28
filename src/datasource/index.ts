@@ -10,9 +10,16 @@ export interface DataSourceStatus {
 
 export type Unsubscribe = () => void;
 
+export interface DataWindowEvent {
+  start: number;
+  end: number;
+  reason?: "prefetch" | "cache-evict" | "update";
+}
+
 export interface DataSourceEvents {
   onStatus?(listener: (status: DataSourceStatus) => void): Unsubscribe;
   getStatus?(): DataSourceStatus;
+  onDataWindow?(listener: (ev: DataWindowEvent) => void): Unsubscribe;
 }
 
 export interface DataSource extends DataSourceEvents {
@@ -21,5 +28,8 @@ export interface DataSource extends DataSourceEvents {
   getColumns(): Column[];
   getRow(index: number): string[];
   getRowBig?(index: bigint): string[];
+  isRowReady?(index: number): boolean;
+  getRowAsync?(index: number): Promise<string[]>;
+  prefetch?(start: number, end: number): void;
   sampleRows(max: number): Iterable<string[]>;
 }

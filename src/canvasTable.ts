@@ -354,10 +354,18 @@ export class VirtualCanvasTable {
       this.dsStatus = ds.getStatus ? ds.getStatus() : ({ state: "idle" } as DataSourceStatus);
       this.dsUnsub = ds.onStatus!((s) => {
         this.dsStatus = s;
+        // Update scroll scale as row count may grow during indexing
+        this.updateScrollScale();
         if (s.state === "ready") {
           this.setColumns(ds.getColumns());
-          this.updateScrollScale();
         }
+        this.needsDraw = true;
+        this.schedule();
+      });
+    }
+    if (typeof (ds as any).onDataWindow === "function") {
+      (ds as any).onDataWindow?.(() => {
+        // Redraw when data windows load or evict
         this.needsDraw = true;
         this.schedule();
       });
@@ -744,6 +752,13 @@ export class VirtualCanvasTable {
       )
     );
 
+    // Prefetch visible window if supported
+    if (this.ds && typeof (this.ds as any).prefetch === "function") {
+      const start = Number(firstRowBig);
+      const end = start + rowCount + this.opts.overscan;
+      (this.ds as any).prefetch(start, end);
+    }
+
     // rows
     ctx.save();
     ctx.beginPath();
@@ -843,7 +858,12 @@ export class VirtualCanvasTable {
           ctx.fillStyle = columnTheme.rowText;
         }
 
-        const text = rowData[c] ?? "";
+        let text = rowData[c] ?? "";
+        const isReady = !this.ds || !(this.ds as any).isRowReady || (this.ds as any).isRowReady(rowIndex);
+        if (!isReady && c > 0) {
+          text = "…";
+          ctx.globalAlpha = 0.45;
+        }
         if ((column?.align ?? "left") === "right") {
           ctx.textAlign = "right";
           ctx.fillText(text, cx + (cw - 8), y + this.opts.rowHeight / 2);
@@ -851,6 +871,7 @@ export class VirtualCanvasTable {
           ctx.textAlign = "left";
           ctx.fillText(text, cx + 8, y + this.opts.rowHeight / 2);
         }
+        ctx.globalAlpha = 1;
         ctx.restore();
 
         // On-the-fly width growth based on measured text
