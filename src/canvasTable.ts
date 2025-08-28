@@ -4,6 +4,7 @@ import type {
   InitElements,
   VirtualTableOptions,
   Theme,
+  BottomRowModule,
 } from "./types";
 import { estimateCsvWidths, estimateDataSourceWidths } from "./measure";
 import type { DataSource } from "./datasource";
@@ -42,6 +43,10 @@ export class VirtualCanvasTable {
       selectedHighlight: () => "rgba(59,130,246,0.15)",
       hoverHighlight: (alpha: number) => `rgba(59,130,246,${alpha})`,
       hoverSeparator: true,
+
+      bottomRowBg: "#f3f4f6",
+      bottomRowText: "#111827",
+      bottomRowFont: this.opts.font,
     };
 
     return {
@@ -50,13 +55,105 @@ export class VirtualCanvasTable {
     };
   }
 
+  private getBottomRowHeight(): number {
+    return this.opts.bottomRowHeight ?? 0;
+  }
+
+  private hasBottomRow(): boolean {
+    return Boolean(
+      this.opts.bottomRowModules && this.opts.bottomRowModules.length > 0
+    );
+  }
+
+  private renderBottomRow(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    scrollLeft: number
+  ): void {
+    if (!this.hasBottomRow()) return;
+
+    const bottomRowHeight = this.getBottomRowHeight();
+    const bottomRowY = h - bottomRowHeight;
+    const theme = this.getTheme();
+
+    // Draw bottom row background
+    ctx.fillStyle = theme.bottomRowBg;
+    ctx.fillRect(0, bottomRowY, w, bottomRowHeight);
+
+    // Draw border above bottom row
+    ctx.strokeStyle = theme.headerBorder;
+    ctx.beginPath();
+    ctx.moveTo(0, bottomRowY + 0.5);
+    ctx.lineTo(w, bottomRowY + 0.5);
+    ctx.stroke();
+
+    // Render bottom row modules
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, bottomRowY, w, bottomRowHeight);
+    ctx.clip();
+
+    ctx.fillStyle = theme.bottomRowText;
+    ctx.font = theme.bottomRowFont;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+
+    const moduleY = bottomRowY + bottomRowHeight / 2 + 1;
+    let moduleX = 8 - scrollLeft;
+
+    if (this.opts.bottomRowModules) {
+      for (const module of this.opts.bottomRowModules) {
+        let moduleText = "";
+
+        switch (module) {
+          case "scroll-position": {
+            const scrollPercent =
+              this.els.viewport.scrollTop > 0
+                ? Math.round(
+                    (this.els.viewport.scrollTop /
+                      (this.els.spacer.clientHeight -
+                        this.els.viewport.clientHeight)) *
+                      100
+                  )
+                : 0;
+            moduleText = `${scrollPercent}%`;
+            break;
+          }
+          case "total-rows": {
+            const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
+            moduleText = `${totalRows.toLocaleString()} rows`;
+            break;
+          }
+          case "fps": {
+            moduleText = "60 fps"; // Placeholder for actual FPS calculation
+            break;
+          }
+        }
+
+        if (moduleText) {
+          ctx.fillText(moduleText, moduleX, moduleY);
+          const textWidth = ctx.measureText(moduleText).width;
+          moduleX += textWidth + 16; // spacing between modules
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
   constructor(
     private els: InitElements,
     private opts: Required<
-      Omit<VirtualTableOptions, "theme" | "scrollerHeight">
+      Omit<
+        VirtualTableOptions,
+        "theme" | "scrollerHeight" | "bottomRowHeight" | "bottomRowModules"
+      >
     > & {
       theme?: Theme;
       scrollerHeight?: number;
+      bottomRowHeight?: number;
+      bottomRowModules?: BottomRowModule[];
     }
   ) {
     this.SAFE_CONTENT_PX = opts.scrollerHeight ?? this.SAFE_CONTENT_PX;
@@ -85,12 +182,13 @@ export class VirtualCanvasTable {
       })),
     ]);
     this.updateScrollScale();
+    const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
     const safeContentPx = Math.max(
       0,
-      this.SAFE_CONTENT_PX - this.opts.headerHeight
+      this.SAFE_CONTENT_PX - this.opts.headerHeight - bottomRowHeight
     );
     this.els.spacer.style.height = `${
-      this.opts.headerHeight + safeContentPx
+      this.opts.headerHeight + safeContentPx + bottomRowHeight
     }px`;
     this.els.viewport.scrollTop = this.opts.headerHeight;
     this.schedule();
@@ -101,11 +199,14 @@ export class VirtualCanvasTable {
     this.csv = undefined;
     this.setColumns(ds.getColumns());
     this.updateScrollScale();
+    const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
     const safeContent = Math.max(
       0,
-      this.SAFE_CONTENT_PX - this.opts.headerHeight
+      this.SAFE_CONTENT_PX - this.opts.headerHeight - bottomRowHeight
     );
-    this.els.spacer.style.height = `${this.opts.headerHeight + safeContent}px`;
+    this.els.spacer.style.height = `${
+      this.opts.headerHeight + safeContent + bottomRowHeight
+    }px`;
     this.els.viewport.scrollTop = this.opts.headerHeight;
     this.schedule();
   }
@@ -134,7 +235,15 @@ export class VirtualCanvasTable {
     this.els.canvas.addEventListener("click", (e) => {
       const rect = this.els.canvas.getBoundingClientRect();
       const y = e.clientY - rect.top;
-      if (y < this.opts.headerHeight) return;
+      const bottomRowHeight = this.hasBottomRow()
+        ? this.getBottomRowHeight()
+        : 0;
+      const bottomRowStart = this.els.viewport.clientHeight - bottomRowHeight;
+      if (
+        y < this.opts.headerHeight ||
+        (this.hasBottomRow() && y >= bottomRowStart)
+      )
+        return;
       const row = this.pointToRowIndex(y);
       this.selectedRow = row;
       // Also store BigInt identity for correctness beyond Number.MAX_SAFE_INTEGER
@@ -160,7 +269,14 @@ export class VirtualCanvasTable {
       (e) => {
         const rect = this.els.canvas.getBoundingClientRect();
         const y = e.clientY - rect.top;
-        if (y < this.opts.headerHeight) {
+        const bottomRowHeight = this.hasBottomRow()
+          ? this.getBottomRowHeight()
+          : 0;
+        const bottomRowStart = this.els.viewport.clientHeight - bottomRowHeight;
+        if (
+          y < this.opts.headerHeight ||
+          (this.hasBottomRow() && y >= bottomRowStart)
+        ) {
           if (this.hoveredRowBig != null) {
             this.hoveredRowBig = null;
             this.needsDraw = true;
@@ -268,8 +384,10 @@ export class VirtualCanvasTable {
         ? (this.ds.getRowCountBig() as bigint)
         : BigInt(this.ds.getRowCount())
       : BigInt(0);
+    const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
     const visibleRows = Math.floor(
-      (viewportHeight - this.opts.headerHeight) / this.opts.rowHeight
+      (viewportHeight - this.opts.headerHeight - bottomRowHeight) /
+        this.opts.rowHeight
     );
     const visibleRowsBig = BigInt(visibleRows < 0 ? 0 : visibleRows);
     const scrollableRowsBig =
@@ -287,15 +405,16 @@ export class VirtualCanvasTable {
   }
 
   private updateScrollScale(): void {
+    const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
     const visible = Math.max(
       0,
-      this.els.viewport.clientHeight - this.opts.headerHeight
+      this.els.viewport.clientHeight - this.opts.headerHeight - bottomRowHeight
     );
     const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
     const virt = Math.max(0, totalRows * this.opts.rowHeight - visible);
     const safeContentPx = Math.max(
       0,
-      this.SAFE_CONTENT_PX - this.opts.headerHeight
+      this.SAFE_CONTENT_PX - this.opts.headerHeight - bottomRowHeight
     );
     // Align DOM scroll range with the coordinate used in computeFirstRow,
     // which is based on (scrollTop - headerHeight). The maximum value of
@@ -432,10 +551,6 @@ export class VirtualCanvasTable {
     // visible rows (BigInt-safe)
     const domContent = Math.max(0, scrollTop - this.opts.headerHeight);
     const { firstRowBig, offsetWithin } = this.computeFirstRow(domContent, h);
-    const firstRowLocal =
-      firstRowBig > BigInt(Number.MAX_SAFE_INTEGER)
-        ? Number.MAX_SAFE_INTEGER
-        : Number(firstRowBig);
     const yStart = this.opts.headerHeight - offsetWithin;
     const maxVisible =
       Math.ceil((h - yStart) / this.opts.rowHeight) + this.opts.overscan;
@@ -460,7 +575,13 @@ export class VirtualCanvasTable {
     // rows
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, this.opts.headerHeight, w, h - this.opts.headerHeight);
+    const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
+    ctx.rect(
+      0,
+      this.opts.headerHeight,
+      w,
+      h - this.opts.headerHeight - bottomRowHeight
+    );
     ctx.clip();
     ctx.save();
     ctx.translate(-scrollLeft, 0);
@@ -478,12 +599,29 @@ export class VirtualCanvasTable {
           : Number(rowIndexBig);
       const y = yStart + i * this.opts.rowHeight;
       if (y > h) break;
-      const rowBg =
+      // Fill default row background first
+      const defaultRowBg =
         typeof theme.rowBg === "function"
           ? theme.rowBg(rowIndexBig)
           : theme.rowBg;
-      ctx.fillStyle = rowBg;
+      ctx.fillStyle = defaultRowBg;
       ctx.fillRect(0, y, this.tableWidth, this.opts.rowHeight);
+
+      // Apply column-specific backgrounds if any columns have theme overrides
+      for (let c = 0; c < this.columns.length; c++) {
+        const column = this.columns[c];
+        const columnTheme = column?.theme;
+        if (columnTheme?.rowBg) {
+          const cw = this.colW[c] ?? 0;
+          const cx = this.colX[c] ?? 0;
+          const columnRowBg =
+            typeof columnTheme.rowBg === "function"
+              ? columnTheme.rowBg(rowIndexBig)
+              : columnTheme.rowBg;
+          ctx.fillStyle = columnRowBg;
+          ctx.fillRect(cx, y, cw, this.opts.rowHeight);
+        }
+      }
 
       const isSelected =
         (this.selectedRowBig != null && rowIndexBig === this.selectedRowBig) ||
@@ -559,15 +697,20 @@ export class VirtualCanvasTable {
       }
     }
 
-    // vertical grid
-    ctx.strokeStyle = theme.columnSeparator;
-    ctx.beginPath();
+    // vertical grid - draw column separators with column theme support
     for (let i = 0; i < this.columns.length; i++) {
+      const column = this.columns[i];
+      const columnTheme = column?.theme;
+      const separatorColor =
+        columnTheme?.columnSeparator ?? theme.columnSeparator;
+
+      ctx.strokeStyle = separatorColor;
+      ctx.beginPath();
       const x = (this.colX[i] ?? 0) + (this.colW[i] ?? 0) + 0.5;
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
+      ctx.stroke();
     }
-    ctx.stroke();
 
     // row separators
     ctx.strokeStyle = theme.rowSeparator;
@@ -609,6 +752,9 @@ export class VirtualCanvasTable {
       this.schedule();
     }
     ctx.restore();
+
+    // Render bottom row
+    this.renderBottomRow(ctx, w, h, scrollLeft);
 
     // Continue hover animation during transitions
     if (hoverTarget === 0 && this.hoverAlpha < 0.01) {

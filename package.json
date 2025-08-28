@@ -7,7 +7,7 @@
 			".": "./src/index.ts",
 			"./datasource/index": "./src/datasource/index.ts",
 			"./datasource/csv": "./src/datasource/csv.ts",
-			"./datasource/every-uuid": "./src/datasource/every-uuid.ts",
+			"./datasource/everyuuid": "./src/datasource/everyuuid.ts",
 			"./datasource/virtual": "./src/datasource/virtual.ts"
 		}
 	},
@@ -51,10 +51,10 @@
 			"import": "./dist/datasource/csv.js",
 			"require": "./dist/datasource/csv.cjs"
 		},
-		"./datasource/every-uuid": {
-			"types": "./dist/datasource/every-uuid.d.cts",
-			"import": "./dist/datasource/every-uuid.js",
-			"require": "./dist/datasource/every-uuid.cjs"
+		"./datasource/everyuuid": {
+			"types": "./dist/datasource/everyuuid.d.cts",
+			"import": "./dist/datasource/everyuuid.js",
+			"require": "./dist/datasource/everyuuid.cjs"
 		},
 		"./datasource/virtual": {
 			"types": "./dist/datasource/virtual.d.cts",

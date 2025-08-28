@@ -11,6 +11,10 @@ export interface Theme {
   selectedHighlight?: (alpha: number) => string;
   hoverHighlight?: (alpha: number) => string;
   hoverSeparator?: boolean;
+
+  bottomRowBg?: string;
+  bottomRowText?: string;
+  bottomRowFont?: string;
 }
 
 export interface Column {
@@ -29,6 +33,8 @@ export interface CsvData {
   rows: number; // number of data rows (excludes header)
 }
 
+export type BottomRowModule = "scroll-position" | "total-rows" | "fps";
+
 export interface VirtualTableOptions {
   headerHeight?: number;
   rowHeight?: number;
@@ -36,6 +42,8 @@ export interface VirtualTableOptions {
   font?: string;
   theme?: Theme;
   scrollerHeight?: number;
+  bottomRowModules?: BottomRowModule[];
+  bottomRowHeight?: number;
 }
 
 export interface MeasureResult {
