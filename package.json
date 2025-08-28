@@ -7,6 +7,7 @@
 			".": "./src/index.ts",
 			"./datasource/index": "./src/datasource/index.ts",
 			"./datasource/csv": "./src/datasource/csv.ts",
+			"./datasource/file-table": "./src/datasource/file-table.ts",
 			"./datasource/everyuuid": "./src/datasource/everyuuid.ts",
 			"./datasource/virtual": "./src/datasource/virtual.ts"
 		}
@@ -50,6 +51,11 @@
 			"types": "./dist/datasource/csv.d.cts",
 			"import": "./dist/datasource/csv.js",
 			"require": "./dist/datasource/csv.cjs"
+		},
+		"./datasource/file-table": {
+			"types": "./dist/datasource/file-table.d.cts",
+			"import": "./dist/datasource/file-table.js",
+			"require": "./dist/datasource/file-table.cjs"
 		},
 		"./datasource/everyuuid": {
 			"types": "./dist/datasource/everyuuid.d.cts",

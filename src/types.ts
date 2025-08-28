@@ -26,19 +26,13 @@ export interface Column {
   theme?: Partial<Theme>;
 }
 
-export interface CsvData {
-  text: string;
-  offsets: Uint32Array; // line start offsets; offsets[0] = 0; offsets[1] = header end + 1
-  header: string[];
-  rows: number; // number of data rows (excludes header)
-}
-
-export type BottomRowModule = "scroll-position" | "total-rows" | "fps" | "github-link";
+export type BottomRowModule = "dynamic-progress" | "scroll-position" | "total-rows" | "fps" | "github-link";
 
 export interface BottomRowModuleConfig {
   type: BottomRowModule;
   position?: "left" | "right";
   url?: string; // For github-link module
+  loadingText?: string; // For dynamic-progress
 }
 
 export interface VirtualTableOptions {
