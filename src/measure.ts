@@ -1,5 +1,6 @@
 import type { Column, CsvData, MeasureResult } from "./types.ts";
 import { splitCsvLine } from "./csv";
+import type { DataSource } from "./datasource";
 
 export function estimateCsvWidths(
   ctx: CanvasRenderingContext2D,
@@ -13,6 +14,7 @@ export function estimateCsvWidths(
   const widths = new Array(columns.length).fill(0);
   ctx.save();
   ctx.font = font;
+  // Column 0 is the synthetic row index; estimate by worst-case id text length
   const idText = String(Math.max(0, csv.rows - 1));
   widths[0] = Math.min(
     maxColWidth,
@@ -21,6 +23,7 @@ export function estimateCsvWidths(
       Math.ceil(ctx.measureText(idText).width) + padding
     )
   );
+  // Initialize with header label widths
   for (let c = 1; c < columns.length; c++) {
     const label = String(columns[c]?.label ?? "");
     widths[c] = Math.max(
@@ -29,10 +32,21 @@ export function estimateCsvWidths(
     );
   }
   const total = csv.rows;
-  const take = Math.min(Math.max(50, sampleCount), 1000);
-  if (take > 0 && total > 0) {
-    const step = Math.max(1, Math.floor(total / take));
-    for (let r = 0; r < total; r += step) {
+  if (total > 0) {
+    const desired = Math.min(Math.max(50, sampleCount), 1000);
+    const half = Math.max(1, Math.floor(desired / 2));
+    const topCount = Math.min(half, total);
+    const bottomCount = Math.min(half, total - topCount);
+    // Collect unique sample row indices from top and bottom
+    const sampleRows: number[] = [];
+    for (let r = 0; r < topCount; r++) sampleRows.push(r);
+    for (let i = 0; i < bottomCount; i++) {
+      const idx = total - 1 - i;
+      if (idx >= 0 && idx >= topCount) sampleRows.push(idx);
+    }
+    // Measure sampled rows
+    for (let k = 0; k < sampleRows.length; k++) {
+      const r = sampleRows[k] ?? 0;
       const start = csv.offsets[r + 1];
       const end = csv.offsets[r + 2] ?? csv.text.length;
       if (start == null || start >= csv.text.length) continue;
@@ -40,6 +54,87 @@ export function estimateCsvWidths(
       const cells = splitCsvLine(line);
       for (let c = 1; c < columns.length; c++) {
         const cell = String(cells[c - 1] ?? "");
+        const w = Math.ceil(ctx.measureText(cell).width) + padding;
+        if (w > widths[c]) widths[c] = Math.min(maxColWidth, w);
+      }
+    }
+  }
+  ctx.restore();
+  let x = 0;
+  for (let i = 0; i < widths.length; i++) x += widths[i] ?? 0;
+  return { widths, tableWidth: x };
+}
+
+export function estimateDataSourceWidths(
+  ctx: CanvasRenderingContext2D,
+  columns: Column[],
+  ds: DataSource,
+  font: string,
+  sampleTop = 64,
+  sampleBottom = 64,
+  padding = 16,
+  maxColWidth = 1200
+): MeasureResult {
+  const widths = new Array(columns.length).fill(0);
+  ctx.save();
+  ctx.font = font;
+  // Estimate id column width from total row count
+  const totalNum = ds.getRowCount();
+  const totalBig = ds.getRowCountBig ? ds.getRowCountBig() : BigInt(totalNum);
+  const idWorst = totalBig > 0n ? (totalBig - 1n).toString() : "0";
+  widths[0] = Math.min(
+    maxColWidth,
+    Math.max(
+      columns[0]?.min ?? 60,
+      Math.ceil(ctx.measureText(idWorst).width) + padding
+    )
+  );
+  // Initialize with header label widths for data columns
+  for (let c = 1; c < columns.length; c++) {
+    const label = String(columns[c]?.label ?? "");
+    widths[c] = Math.max(
+      columns[c]?.min ?? 120,
+      Math.ceil(ctx.measureText(label).width) + padding
+    );
+  }
+  // Top sampling (number API)
+  const topCount = Math.max(
+    0,
+    Math.min(sampleTop, Number.isFinite(totalNum) ? totalNum : sampleTop)
+  );
+  for (let r = 0; r < topCount; r++) {
+    const row = ds.getRow(r);
+    for (let c = 0; c < Math.min(columns.length, row.length); c++) {
+      const cell = String(row[c] ?? "");
+      const w = Math.ceil(ctx.measureText(cell).width) + padding;
+      if (w > widths[c]) widths[c] = Math.min(maxColWidth, w);
+    }
+  }
+  // Bottom sampling (BigInt API if available)
+  if (ds.getRowCountBig && ds.getRowBig) {
+    const totalB = ds.getRowCountBig() as bigint;
+    const desired = BigInt(Math.max(0, sampleBottom));
+    let taken = 0n;
+    for (let i = 0n; i < desired; i++) {
+      if (totalB === 0n) break;
+      const idx = totalB - 1n - i;
+      if (idx < 0n) break;
+      const row = ds.getRowBig(idx) as string[];
+      for (let c = 0; c < Math.min(columns.length, row.length); c++) {
+        const cell = String(row[c] ?? "");
+        const w = Math.ceil(ctx.measureText(cell).width) + padding;
+        if (w > widths[c]) widths[c] = Math.min(maxColWidth, w);
+      }
+      taken++;
+    }
+  } else if (Number.isFinite(totalNum)) {
+    const bottomCountNum = Math.max(0, Math.min(sampleBottom, totalNum));
+    for (let i = 0; i < bottomCountNum; i++) {
+      const idx = totalNum - 1 - i;
+      if (idx < 0) break;
+      const row = ds.getRow(idx);
+      for (let c = 0; c < Math.min(columns.length, row.length); c++) {
+        const cell = String(row[c] ?? "");
         const w = Math.ceil(ctx.measureText(cell).width) + padding;
         if (w > widths[c]) widths[c] = Math.min(maxColWidth, w);
       }

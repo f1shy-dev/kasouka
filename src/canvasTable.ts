@@ -4,7 +4,7 @@ import type {
   InitElements,
   VirtualTableOptions,
 } from "./types";
-import { estimateCsvWidths } from "./measure";
+import { estimateCsvWidths, estimateDataSourceWidths } from "./measure";
 import type { DataSource } from "./datasource";
 
 export class VirtualCanvasTable {
@@ -15,7 +15,8 @@ export class VirtualCanvasTable {
   private colW: number[] = [];
   private tableWidth = 0;
   private selectedRow = -1;
-  private hoveredRow = -1;
+  private selectedRowBig: bigint | null = null;
+  private hoveredRowBig: bigint | null = null;
   private hoverAlpha = 0;
   private rafId = 0;
   private needsDraw = true;
@@ -24,6 +25,7 @@ export class VirtualCanvasTable {
   private ds?: DataSource;
   private debugEnabled = false;
   private debugText = "";
+  private dynamicWidths?: number[];
 
   constructor(
     private els: InitElements,
@@ -99,13 +101,74 @@ export class VirtualCanvasTable {
       const y = e.clientY - rect.top;
       if (y < this.opts.headerHeight) return;
       const row = this.pointToRowIndex(y);
-      if (row >= 0 && this.csv && row < this.csv.rows) {
-        this.selectedRow = row;
+      this.selectedRow = row;
+      // Also store BigInt identity for correctness beyond Number.MAX_SAFE_INTEGER
+      const domContent = Math.max(
+        0,
+        this.els.viewport.scrollTop - this.opts.headerHeight
+      );
+      const { firstRowBig, offsetWithin } = this.computeFirstRow(
+        domContent,
+        this.els.viewport.clientHeight
+      );
+      const yStart = this.opts.headerHeight - offsetWithin;
+      const rowInView = Math.max(
+        0,
+        Math.floor((y - yStart) / this.opts.rowHeight)
+      );
+      this.selectedRowBig = firstRowBig + BigInt(rowInView);
+      this.needsDraw = true;
+      this.schedule();
+    });
+    this.els.viewport.addEventListener(
+      "mousemove",
+      (e) => {
+        const rect = this.els.canvas.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        if (y < this.opts.headerHeight) {
+          if (this.hoveredRowBig != null) {
+            this.hoveredRowBig = null;
+            this.needsDraw = true;
+            this.schedule();
+          }
+          return;
+        }
+        const domContent = Math.max(
+          0,
+          this.els.viewport.scrollTop - this.opts.headerHeight
+        );
+        const { firstRowBig, offsetWithin } = this.computeFirstRow(
+          domContent,
+          this.els.viewport.clientHeight
+        );
+        const yStart = this.opts.headerHeight - offsetWithin;
+        const rowInView = Math.max(
+          0,
+          Math.floor((y - yStart) / this.opts.rowHeight)
+        );
+        const nextHover = firstRowBig + BigInt(rowInView);
+        if (this.hoveredRowBig !== nextHover) {
+          this.hoveredRowBig = nextHover;
+          this.hoverAlpha = 0;
+          this.needsDraw = true;
+          this.schedule();
+        }
+      },
+      { passive: true }
+    );
+    this.els.viewport.addEventListener(
+      "mouseleave",
+      () => {
+        this.hoveredRowBig = null;
         this.needsDraw = true;
         this.schedule();
-      }
-    });
+      },
+      { passive: true }
+    );
     this.resize();
+    // Ensure horizontal scrollbar can appear in host container
+    if (!this.els.viewport.style.overflowX)
+      this.els.viewport.style.overflowX = "auto";
   }
 
   private schedule(): void {
@@ -216,6 +279,23 @@ export class VirtualCanvasTable {
         csv,
         this.opts.font
       );
+      this.dynamicWidths = widths.slice();
+      for (let i = 0; i < this.columns.length; i++) {
+        this.colX.push(x);
+        const w = widths[i] ?? 120;
+        this.colW.push(w);
+        x += w;
+      }
+      this.tableWidth = tableWidth;
+    } else if (this.ds && this.columns.length) {
+      const ds = this.ds as DataSource;
+      const { widths, tableWidth } = estimateDataSourceWidths(
+        this.ctx,
+        this.columns,
+        ds,
+        this.opts.font
+      );
+      this.dynamicWidths = widths.slice();
       for (let i = 0; i < this.columns.length; i++) {
         this.colX.push(x);
         const w = widths[i] ?? 120;
@@ -224,6 +304,7 @@ export class VirtualCanvasTable {
       }
       this.tableWidth = tableWidth;
     } else {
+      // Fallback: distribute space but respect minimums
       for (let i = 0; i < this.columns.length; i++) {
         const min = this.columns[i]?.min ?? 120;
         const w = Math.max(
@@ -263,6 +344,7 @@ export class VirtualCanvasTable {
       ? Number.MAX_SAFE_INTEGER
       : Number(idxBig);
   }
+  // hover uses pointer position each frame; BigInt row helper removed
 
   private draw(): void {
     this.rafId = 0;
@@ -273,6 +355,9 @@ export class VirtualCanvasTable {
     const scrollTop = this.els.viewport.scrollTop;
     const scrollLeft = this.els.viewport.scrollLeft;
     const ctx = this.ctx;
+    // Hover easing: if we have a hovered row, ease in; else ease out
+    const hoverTarget = this.hoveredRowBig != null ? 1 : 0;
+    this.hoverAlpha += (hoverTarget - this.hoverAlpha) * 0.25;
 
     ctx.clearRect(0, 0, w, h);
 
@@ -341,6 +426,11 @@ export class VirtualCanvasTable {
     ctx.save();
     ctx.translate(-scrollLeft, 0);
 
+    let grew = false;
+    const tableRemaining = Math.max(0, this.tableWidth - scrollLeft);
+    const highlightW = this.tableWidth <= w ? w : Math.min(w, tableRemaining);
+    // BigInt row index for hover this frame
+    const hoveredRowBigForFrame = this.hoveredRowBig;
     for (let i = 0; i < rowCount; i++) {
       const rowIndexBig = firstRowBig + BigInt(i);
       const rowIndex =
@@ -357,9 +447,22 @@ export class VirtualCanvasTable {
         : "#ffffff";
       ctx.fillRect(0, y, this.tableWidth, this.opts.rowHeight);
 
-      if (rowIndex === this.selectedRow) {
+      const isSelected =
+        (this.selectedRowBig != null && rowIndexBig === this.selectedRowBig) ||
+        rowIndex === this.selectedRow;
+      if (isSelected) {
         ctx.fillStyle = "rgba(59,130,246,0.15)";
-        ctx.fillRect(0, y, w, this.opts.rowHeight);
+        ctx.fillRect(0, y, highlightW, this.opts.rowHeight);
+      }
+      // hover highlight (under text), skip if selected; use BigInt identity
+      const isHover =
+        hoveredRowBigForFrame != null && rowIndexBig === hoveredRowBigForFrame;
+      if (isHover && !isSelected) {
+        const alpha = Math.max(0, Math.min(1, this.hoverAlpha)) * 0.1;
+        if (alpha > 0.002) {
+          ctx.fillStyle = `rgba(59,130,246,${alpha})`;
+          ctx.fillRect(0, y, highlightW, this.opts.rowHeight);
+        }
       }
 
       let rowData: string[] = [];
@@ -386,18 +489,26 @@ export class VirtualCanvasTable {
         ctx.beginPath();
         ctx.rect(cx + 1, y + 1, Math.max(0, cw - 2), this.opts.rowHeight - 2);
         ctx.clip();
+        const text = rowData[c] ?? "";
         if ((this.columns[c]?.align ?? "left") === "right") {
           ctx.textAlign = "right";
-          ctx.fillText(
-            rowData[c] ?? "",
-            cx + (cw - 8),
-            y + this.opts.rowHeight / 2
-          );
+          ctx.fillText(text, cx + (cw - 8), y + this.opts.rowHeight / 2);
         } else {
           ctx.textAlign = "left";
-          ctx.fillText(rowData[c] ?? "", cx + 8, y + this.opts.rowHeight / 2);
+          ctx.fillText(text, cx + 8, y + this.opts.rowHeight / 2);
         }
         ctx.restore();
+
+        // On-the-fly width growth based on measured text
+        const measured = Math.ceil(ctx.measureText(text).width) + 16; // padding
+        const minCol = this.columns[c]?.min ?? (c === 0 ? 60 : 120);
+        const needed = Math.max(minCol, measured);
+        if (needed > cw) {
+          // Grow tracked width arrays lazily and schedule reflow
+          this.colW[c] = needed;
+          if (this.dynamicWidths) this.dynamicWidths[c] = needed;
+          grew = true;
+        }
       }
     }
 
@@ -422,7 +533,32 @@ export class VirtualCanvasTable {
     }
     ctx.stroke();
     ctx.restore();
+    // If any column grew, recompute x positions and total width, then request redraw
+    if (grew) {
+      this.colX.length = 0;
+      let nx = 0;
+      for (let i = 0; i < this.colW.length; i++) {
+        this.colX.push(nx);
+        nx += this.colW[i] ?? 0;
+      }
+      this.tableWidth = nx;
+      this.els.spacer.style.width = `${Math.max(
+        this.tableWidth,
+        this.els.viewport.clientWidth
+      )}px`;
+      this.needsDraw = true;
+      this.schedule();
+    }
     ctx.restore();
+
+    // Continue hover animation during transitions
+    if (hoverTarget === 0 && this.hoverAlpha < 0.01) {
+      this.hoverAlpha = 0;
+    }
+    if (Math.abs(hoverTarget - this.hoverAlpha) > 0.01) {
+      this.needsDraw = true;
+      this.schedule();
+    }
 
     // Debug overlay (drawn in-canvas)
     if (this.debugEnabled) {

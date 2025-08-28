@@ -1,8 +1,9 @@
 import { VirtualCanvasTable, makeCsvData } from "kasouka";
 
 import { EveryUUIDVirtualDataSource } from "kasouka/datasource/every-uuid";
-import { CsvDataSource } from "kasouka/datasource/csv";
 
+import { CsvDataSource } from "kasouka/datasource/csv";
+import { ExampleVirtualDataSource } from "kasouka/datasource/virtual";
 const $ = <T extends HTMLElement>(selector: string) =>
   document.querySelector(selector) as T | null;
 
@@ -46,6 +47,11 @@ function updateTogglePosition() {
 
 function switchToVirtualData() {
   table.setDataSource(new EveryUUIDVirtualDataSource());
+  // table.setDataSource(
+  //   new ExampleVirtualDataSource({
+  //     rows: Math.min(1_000_000_000_000_000_000, Number.MAX_SAFE_INTEGER * 2),
+  //   })
+  // );
 }
 
 async function handleCsvUpload() {

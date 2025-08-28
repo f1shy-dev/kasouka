@@ -12,76 +12,77 @@
     />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body class="h-full m-0 font-mono text-gray-900 bg-white overflow-hidden">
-    <div
-      class="flex flex-col bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200 shadow-sm"
-    >
-      <div class="flex items-center px-4 py-2 gap-8">
-        <div class="flex flex-col">
-          <h1 class="text-xl font-bold text-black tracking-tighter">
-            kasouka
-            <span class="text-gray-500 font-normal text-sm">(仮想化)</span>
-          </h1>
-          <span class="text-gray-500 font-normal text-sm tracking-tight"
-            >canvas-based list virtualiser</span
-          >
-        </div>
-        <div class="flex flex-col">
-          <span class="text-gray-500 font-normal text-xs tracking-tight"
-            >Data source</span
-          >
-          <div
-            class="relative flex items-center bg-gray-100 rounded-lg px-0.5 mt-1 w-80"
-          >
+  <body class="h-dvh m-0 font-mono text-gray-900 bg-white overflow-hidden">
+    <div class="flex flex-col h-dvh">
+      <div
+        class="flex flex-col bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200 shadow-sm"
+        id="header"
+      >
+        <div
+          class="flex flex-col md:flex-row md:items-center px-4 py-2 gap-2 md:gap-8"
+        >
+          <div class="flex flex-col">
+            <h1 class="text-xl font-bold text-black tracking-tighter">
+              kasouka
+              <span class="text-gray-500 font-normal text-sm">(仮想化)</span>
+            </h1>
+            <span class="text-gray-500 font-normal text-sm tracking-tight"
+              >canvas-based list virtualiser</span
+            >
+          </div>
+          <div class="flex flex-col">
+            <span class="text-gray-500 font-normal text-xs tracking-tight"
+              >Data source</span
+            >
             <div
-              class="absolute inset-y-1 w-[calc(50%-6px)] bg-white rounded-md shadow-sm transition-transform duration-200 ease-out transform translate-x-1"
-              id="toggleBackground"
-            ></div>
-            <label
-              class="relative flex items-center justify-center gap-2 cursor-pointer px-2 py-1.5 flex-1 z-10"
+              class="relative flex items-center bg-gray-100 rounded-lg px-0.5 mt-1 w-80"
             >
-              <input
-                id="dataSourceCsv"
-                type="radio"
-                name="dataSource"
-                value="csv"
-                class="sr-only"
-              />
-              <span class="text-gray-700 text-sm font-medium">CSV file</span>
-            </label>
-            <label
-              class="relative flex items-center justify-center gap-2 cursor-pointer px-2 py-1.5 flex-1 z-10"
-            >
-              <input
-                id="dataSourceUuid"
-                type="radio"
-                name="dataSource"
-                value="uuid"
-                checked
-                class="sr-only"
-              />
-              <span class="text-gray-700 text-sm font-medium"
-                >Every UUID ~2<sup>122</sup></span
+              <div
+                class="absolute inset-y-1 w-[calc(50%-6px)] bg-white rounded-md shadow-sm transition-transform duration-200 ease-out transform translate-x-1"
+                id="toggleBackground"
+              ></div>
+              <label
+                class="relative flex items-center justify-center gap-2 cursor-pointer px-2 py-1.5 flex-1 z-10"
               >
-            </label>
+                <input
+                  id="dataSourceCsv"
+                  type="radio"
+                  name="dataSource"
+                  value="csv"
+                  class="sr-only"
+                />
+                <span class="text-gray-700 text-sm font-medium">CSV file</span>
+              </label>
+              <label
+                class="relative flex items-center justify-center gap-2 cursor-pointer px-2 py-1.5 flex-1 z-10"
+              >
+                <input
+                  id="dataSourceUuid"
+                  type="radio"
+                  name="dataSource"
+                  value="uuid"
+                  checked
+                  class="sr-only"
+                />
+                <span class="text-gray-700 text-sm font-medium"
+                  >Every UUID ~2<sup>122</sup></span
+                >
+              </label>
+            </div>
           </div>
         </div>
       </div>
+      <div
+        id="viewport"
+        class="relative flex-1 min-h-0 overflow-auto bg-white border-t border-gray-200 overscroll-contain"
+      >
+        <div id="spacer" class="w-full h-full"></div>
+        <canvas
+          id="layer"
+          class="fixed top-0 left-0 w-full h-full block z-10 bg-transparent pointer-events-none"
+        ></canvas>
+      </div>
     </div>
-    <div
-      id="viewport"
-      class="relative h-[calc(100vh-60px)] overflow-auto bg-white border-t border-gray-200 overscroll-contain"
-    >
-      <div id="spacer" class="w-full h-full"></div>
-      <canvas
-        id="layer"
-        class="fixed top-0 left-0 w-full h-full block z-10 bg-transparent pointer-events-none"
-      ></canvas>
-    </div>
-    <div
-      id="debugOverlay"
-      class="fixed left-3 bottom-3 bg-black/60 text-white text-xs px-2 py-1.5 rounded-md z-30 pointer-events-none whitespace-pre hidden"
-    ></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
