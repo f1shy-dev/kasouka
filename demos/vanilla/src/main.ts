@@ -1,3 +1,5 @@
+import { inject } from "@vercel/analytics";
+inject();
 import { VirtualCanvasTable, makeCsvData } from "kasouka";
 import { EveryUUIDVirtualDataSource } from "kasouka/datasource/everyuuid";
 
