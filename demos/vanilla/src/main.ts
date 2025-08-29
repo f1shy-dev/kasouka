@@ -1,9 +1,8 @@
 import { inject } from "@vercel/analytics";
 inject();
-import { VirtualCanvasTable, makeCsvData } from "kasouka";
+import { VirtualCanvasTable } from "kasouka";
 import { EveryUUIDVirtualDataSource } from "kasouka/datasource/everyuuid";
-
-import { CsvDataSource } from "kasouka/datasource/csv";
+import { FileTableDataSource } from "kasouka/datasource/file-table";
 const $ = <T extends HTMLElement>(selector: string) =>
   document.querySelector(selector) as T | null;
 
@@ -36,7 +35,7 @@ const table = new VirtualCanvasTable(
     },
     scrollerHeight: 32_000,
     bottomRowModules: [
-      "scroll-position",
+      { type: "dynamic-progress", loadingText: "Loading file" },
       "total-rows",
       {
         type: "github-link",
@@ -50,7 +49,7 @@ const table = new VirtualCanvasTable(
 
 const csvInput = document.createElement("input");
 csvInput.type = "file";
-csvInput.accept = ".csv";
+csvInput.accept = ".csv,.tsv,.txt";
 csvInput.style.display = "none";
 document.body.appendChild(csvInput);
 
@@ -72,9 +71,7 @@ async function handleCsvUpload() {
   const file = csvInput.files?.[0];
   if (!file) return;
 
-  const text = await file.text();
-  const csv = makeCsvData(text);
-  table.setDataSource(new CsvDataSource(csv));
+  table.setDataSource(new FileTableDataSource(file));
 }
 
 csvRadio.addEventListener("change", () => {

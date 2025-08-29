@@ -1,14 +1,13 @@
 import type {
   Column,
-  CsvData,
   InitElements,
   VirtualTableOptions,
   Theme,
   BottomRowModule,
   BottomRowModuleConfig,
 } from "./types";
-import { estimateCsvWidths, estimateDataSourceWidths } from "./measure";
-import type { DataSource } from "./datasource";
+import { estimateDataSourceWidths } from "./measure";
+import type { DataSource, DataSourceStatus } from "./datasource";
 import { ICONS, renderIcon } from "./misc-icons";
 
 export class VirtualCanvasTable {
@@ -24,8 +23,9 @@ export class VirtualCanvasTable {
   private rafId = 0;
   private needsDraw = true;
   private scrollScale = { domMax: 0, virtMax: 0, k: 1 };
-  private csv?: CsvData;
   private ds?: DataSource;
+  private dsStatus: DataSourceStatus = { state: "idle", progress: 0, message: "" };
+  private dsUnsub?: () => void;
   private debugEnabled = false;
   private debugText = "";
   private dynamicWidths?: number[];
@@ -174,6 +174,58 @@ export class VirtualCanvasTable {
         return x + (isReversed ? -1 : 1) * (textOffset + moduleWidth + spacing);
       }
 
+      if (module.type === "dynamic-progress") {
+        const scrollPercent =
+          this.els.viewport.scrollTop > 0
+            ? Math.round(
+                (this.els.viewport.scrollTop /
+                  (this.els.spacer.clientHeight -
+                    this.els.viewport.clientHeight)) *
+                  100
+              )
+            : 0;
+        const isLoading = this.dsStatus?.state === "loading";
+        const iconY = moduleY - iconSize / 2;
+        const textOffset = iconSize + 4;
+        let iconX: number;
+        let textX: number;
+        if (isLoading) {
+          const p = this.dsStatus.progress != null ? Math.round((this.dsStatus.progress || 0) * 100) : (Date.now() / 40) % 100;
+          const loadingText = (module as any).loadingText || this.dsStatus.message || "Loading";
+          const moduleText = this.dsStatus.progress != null ? `${loadingText} ${p}%` : `${loadingText}`;
+          const moduleWidth = ctx.measureText(moduleText).width;
+          if (align === "left") {
+            iconX = x;
+            textX = x + textOffset;
+            renderIcon(ctx, ICONS["loading-circle"], iconX, iconY, iconSize, [p]);
+            ctx.fillText(moduleText, textX, moduleY);
+            return x + textOffset + moduleWidth + spacing;
+          } else {
+            textX = x - moduleWidth;
+            iconX = textX - textOffset;
+            ctx.fillText(moduleText, textX, moduleY);
+            renderIcon(ctx, ICONS["loading-circle"], iconX, iconY, iconSize, [p]);
+            return x - (textOffset + moduleWidth + spacing);
+          }
+        } else {
+          const moduleText = `${scrollPercent}%`;
+          const moduleWidth = ctx.measureText(moduleText).width;
+          if (align === "left") {
+            iconX = x;
+            textX = x + textOffset;
+            renderIcon(ctx, ICONS["loading-circle"], iconX, iconY, iconSize, [scrollPercent]);
+            ctx.fillText(moduleText, textX, moduleY);
+            return x + textOffset + moduleWidth + spacing;
+          } else {
+            textX = x - moduleWidth;
+            iconX = textX - textOffset;
+            ctx.fillText(moduleText, textX, moduleY);
+            renderIcon(ctx, ICONS["loading-circle"], iconX, iconY, iconSize, [scrollPercent]);
+            return x - (textOffset + moduleWidth + spacing);
+          }
+        }
+      }
+
       if (module.type === "scroll-position") {
         const scrollPercent =
           this.els.viewport.scrollTop > 0
@@ -213,10 +265,9 @@ export class VirtualCanvasTable {
       }
 
       if (module.type === "total-rows") {
+        if (this.dsStatus?.state !== "ready") return x;
         let totalRows = 0n;
-        if (this.csv && typeof this.csv.rows === "number") {
-          totalRows = BigInt(this.csv.rows);
-        } else if (this.ds && typeof this.ds.getRowCountBig === "function") {
+        if (this.ds && typeof this.ds.getRowCountBig === "function") {
           const val = this.ds.getRowCountBig();
           totalRows = val;
         } else if (this.ds && typeof this.ds.getRowCount === "function") {
@@ -293,35 +344,32 @@ export class VirtualCanvasTable {
     this.computeColumns();
   }
 
-  setCsv(csv: CsvData): void {
-    this.csv = csv;
-    this.ds = undefined;
-    // first column is #, the rest from csv header
-    this.setColumns([
-      { key: "id", label: "#", min: 60, align: "right" },
-      ...csv.header.map((h, i) => ({
-        key: `csv_${i}`,
-        label: String(h ?? `col${i + 1}`),
-        min: 120,
-        align: "left" as const,
-      })),
-    ]);
-    this.updateScrollScale();
-    const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
-    const safeContentPx = Math.max(
-      0,
-      this.SAFE_CONTENT_PX - this.opts.headerHeight - bottomRowHeight
-    );
-    this.els.spacer.style.height = `${
-      this.opts.headerHeight + safeContentPx + bottomRowHeight
-    }px`;
-    this.els.viewport.scrollTop = this.opts.headerHeight;
-    this.schedule();
-  }
-
   setDataSource(ds: DataSource): void {
     this.ds = ds;
-    this.csv = undefined;
+    if (this.dsUnsub) {
+      this.dsUnsub();
+      this.dsUnsub = undefined;
+    }
+    if (typeof ds.onStatus === "function") {
+      this.dsStatus = ds.getStatus ? ds.getStatus() : ({ state: "idle" } as DataSourceStatus);
+      this.dsUnsub = ds.onStatus!((s) => {
+        this.dsStatus = s;
+        // Update scroll scale as row count may grow during indexing
+        this.updateScrollScale();
+        if (s.state === "ready") {
+          this.setColumns(ds.getColumns());
+        }
+        this.needsDraw = true;
+        this.schedule();
+      });
+    }
+    if (typeof (ds as any).onDataWindow === "function") {
+      (ds as any).onDataWindow?.(() => {
+        // Redraw when data windows load or evict
+        this.needsDraw = true;
+        this.schedule();
+      });
+    }
     this.setColumns(ds.getColumns());
     this.updateScrollScale();
     const bottomRowHeight = this.hasBottomRow() ? this.getBottomRowHeight() : 0;
@@ -548,9 +596,7 @@ export class VirtualCanvasTable {
       0,
       Math.min(Math.floor(domContent), domMax)
     );
-    const totalRowsBig: bigint = this.csv
-      ? BigInt(this.csv.rows)
-      : this.ds
+    const totalRowsBig: bigint = this.ds
       ? this.ds.getRowCountBig && this.ds.getRowCountBig() !== undefined
         ? (this.ds.getRowCountBig() as bigint)
         : BigInt(this.ds.getRowCount())
@@ -581,7 +627,7 @@ export class VirtualCanvasTable {
       0,
       this.els.viewport.clientHeight - this.opts.headerHeight - bottomRowHeight
     );
-    const totalRows = this.csv?.rows ?? this.ds?.getRowCount() ?? 0;
+    const totalRows = this.ds?.getRowCount() ?? 0;
     const virt = Math.max(0, totalRows * this.opts.rowHeight - visible);
     const safeContentPx = Math.max(
       0,
@@ -599,23 +645,7 @@ export class VirtualCanvasTable {
     this.colX.length = 0;
     this.colW.length = 0;
     let x = 0;
-    if (this.csv && this.columns.length) {
-      const csv = this.csv as CsvData;
-      const { widths, tableWidth } = estimateCsvWidths(
-        this.ctx,
-        this.columns,
-        csv,
-        this.opts.font
-      );
-      this.dynamicWidths = widths.slice();
-      for (let i = 0; i < this.columns.length; i++) {
-        this.colX.push(x);
-        const w = widths[i] ?? 120;
-        this.colW.push(w);
-        x += w;
-      }
-      this.tableWidth = tableWidth;
-    } else if (this.ds && this.columns.length) {
+    if (this.ds && this.columns.length) {
       const ds = this.ds as DataSource;
       const { widths, tableWidth } = estimateDataSourceWidths(
         this.ctx,
@@ -706,9 +736,7 @@ export class VirtualCanvasTable {
     const yStart = this.opts.headerHeight - offsetWithin;
     const maxVisible =
       Math.ceil((h - yStart) / this.opts.rowHeight) + this.opts.overscan;
-    const totalRowsBig: bigint = this.csv
-      ? BigInt(this.csv.rows)
-      : this.ds
+    const totalRowsBig: bigint = this.ds
       ? this.ds.getRowCountBig
         ? (this.ds.getRowCountBig() as bigint)
         : BigInt(this.ds.getRowCount())
@@ -723,6 +751,13 @@ export class VirtualCanvasTable {
           : rowsRemainingBig
       )
     );
+
+    // Prefetch visible window if supported
+    if (this.ds && typeof (this.ds as any).prefetch === "function") {
+      const start = Number(firstRowBig);
+      const end = start + rowCount + this.opts.overscan;
+      (this.ds as any).prefetch(start, end);
+    }
 
     // rows
     ctx.save();
@@ -793,9 +828,7 @@ export class VirtualCanvasTable {
       }
 
       let rowData: string[] = [];
-      if (this.csv) {
-        rowData = this.getCsvRow(rowIndex);
-      } else if (this.ds) {
+      if (this.ds) {
         if (
           this.ds.getRowBig &&
           rowIndexBig > BigInt(Number.MAX_SAFE_INTEGER)
@@ -825,7 +858,12 @@ export class VirtualCanvasTable {
           ctx.fillStyle = columnTheme.rowText;
         }
 
-        const text = rowData[c] ?? "";
+        let text = rowData[c] ?? "";
+        const isReady = !this.ds || !(this.ds as any).isRowReady || (this.ds as any).isRowReady(rowIndex);
+        if (!isReady && c > 0) {
+          text = "…";
+          ctx.globalAlpha = 0.45;
+        }
         if ((column?.align ?? "left") === "right") {
           ctx.textAlign = "right";
           ctx.fillText(text, cx + (cw - 8), y + this.opts.rowHeight / 2);
@@ -833,6 +871,7 @@ export class VirtualCanvasTable {
           ctx.textAlign = "left";
           ctx.fillText(text, cx + 8, y + this.opts.rowHeight / 2);
         }
+        ctx.globalAlpha = 1;
         ctx.restore();
 
         // On-the-fly width growth based on measured text
@@ -941,19 +980,4 @@ export class VirtualCanvasTable {
     }
   }
 
-  private getCsvRow(index: number): string[] {
-    const out: string[] = new Array(this.columns.length);
-    out[0] = String(index);
-    if (!this.csv) return out;
-    const start = this.csv.offsets[index + 1];
-    const end = this.csv.offsets[index + 2] ?? this.csv.text.length;
-    if (start == null || start >= this.csv.text.length) return out;
-    const line = this.csv.text.slice(
-      start,
-      Math.min(end, this.csv.text.length)
-    );
-    const cells = line ? line.split(",") : [];
-    for (let c = 1; c < this.columns.length; c++) out[c] = cells[c - 1] ?? "";
-    return out;
-  }
 }
