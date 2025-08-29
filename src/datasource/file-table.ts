@@ -105,30 +105,6 @@ export class FileTableDataSource implements DataSource {
     }
   }
 
-
-  while (true) {
-    if (canceled.has(id)) { try { await reader.cancel(); } catch (_) {} postMessage({ type: 'window-canceled', id }); return; }
-    const { value, done } = await reader.read(); if (done) break; if (!value) continue;
-    parts.push(td.decode(value, { stream: true })); total += value.byteLength;
-  }
-  parts.push(td.decode());
-  let text = parts.join('');
-  const lines = text.split('\n');
-  const rows = new Array(msg.count);
-  for (let i = 0; i < msg.count; i++) {
-    let line = lines[i] || ''; if (line.endsWith('\r')) line = line.slice(0,-1);
-    const cells = splitQuotedLine(line, g.delimiter);
-    const rowIdx = msg.startRow + i;
-    const out = new Array(msg.colCount);
-    out[0] = String(rowIdx);
-    for (let c = 1; c < msg.colCount; c++) out[c] = cells[c - 1] || '';
-    rows[i] = out;
-  }
-  postMessage({ type: 'window-done', id, startRow: msg.startRow, rows, bytes: total });
-}
-`;
-  }
-
   private onWorkerMessage(msg: any): void {
     if (msg.type === "index-progress") {
       const size = (this.file as File).size;
@@ -225,13 +201,27 @@ export class FileTableDataSource implements DataSource {
 
   isRowReady(index: number): boolean {
     const k = this.windowKeyForRow(index);
-    const win = this.cache.get(k);
-    return !!(win && index >= k && index < k + win.length);
+    const meta = this.cache.get(k);
+    const len = meta?.rows.length ?? 0;
+    return !!(len && index >= k && index < k + len);
   }
 
   async getRowAsync(index: number): Promise<string[]> {
     const k = this.windowKeyForRow(index);
-    if (!this.cache.has(k)) await this.loadWindow(k);
+    if (!this.cache.has(k)) {
+      if (this.worker) {
+        this.wantedKeys.add(k);
+        this.wantedAnchor = index;
+        this.processQueue();
+        await new Promise<void>((resolve) => {
+          const off = this.onDataWindow(() => {
+            if (this.cache.has(k)) { off(); resolve(); }
+          });
+        });
+      } else {
+        await this.loadWindowMain(k);
+      }
+    }
     return this.getRow(index);
   }
 
@@ -239,9 +229,9 @@ export class FileTableDataSource implements DataSource {
     const out: string[] = new Array(this.columns.length);
     out[0] = String(index);
     const k = this.windowKeyForRow(index);
-    const win = this.cache.get(k);
-    if (win) {
-      const row = win[index - k];
+    const meta = this.cache.get(k);
+    if (meta) {
+      const row = meta.rows[index - k];
       if (row) return row;
     } else {
       // kick off async load

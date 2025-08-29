@@ -23,7 +23,7 @@ interface CancelMsg { type: "cancel"; ids: number[] }
 
 type InMsg = InitMsg | IndexMsg | LoadWindowMsg | CancelMsg;
 
-declare const self: DedicatedWorkerGlobalScope;
+/// <reference lib="WebWorker" />
 
 const g = {
   file: null as File | null,
@@ -141,8 +141,7 @@ async function indexFile(): Promise<void> {
   if (offsets[offsets.length - 1] !== size) offsets.push(size);
   const rows = Math.max(0, offsets.length - 2);
   const arr = new Uint32Array(offsets);
-  // @ts-expect-error structured cloning transfer list typing
-  postMessage({ type: "index-done", offsets: arr, rows }, { transfer: [arr.buffer] });
+  (postMessage as any)({ type: "index-done", offsets: arr, rows }, { transfer: [arr.buffer] as any });
 }
 
 async function loadWindow(msg: LoadWindowMsg): Promise<void> {
