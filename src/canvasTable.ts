@@ -50,7 +50,9 @@ const mergeWithDefaults = (
     height: 24,
     ...opts.bottomRow,
 
-    modules: opts.bottomRow?.modules?.filter((m) => typeof m === "object") ?? [
+    modules: opts.bottomRow?.modules?.filter(
+      (m) => typeof m !== "undefined"
+    ) ?? [
       "scroll-position",
       "total-rows",
       {
@@ -155,6 +157,7 @@ export class VirtualCanvasTable {
       const module = this.normalizeBottomRowModule(rawModule);
       (module.position === "right" ? rightModules : leftModules).push(module);
     }
+    console.log(leftModules, rightModules);
 
     const renderModule = (
       module: BottomRowModuleConfig,
