@@ -21,30 +21,40 @@ if (!viewport || !spacer || !canvas || !csvRadio || !uuidRadio || !toggleBg) {
 const table = new VirtualCanvasTable(
   { viewport, spacer, canvas },
   {
-    headerHeight: 24,
-    rowHeight: 24,
+    baseFont:
+      "14px Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     overscan: 4,
-    font: "14px Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    theme: {
-      rowBg: "#ffffff",
-      selectedHighlight: () => "hsl(260deg, 91.2%, 59.8%, 0.15)",
-      hoverHighlight: (alpha: number) => `hsl(260deg, 91.2%, 59.8%,${alpha})`,
-      hoverSeparator: false,
-      bottomRowText: "#666",
-      bottomRowFont:
-        "12px Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    header: {
+      enabled: true,
+      background: "#fff",
+      text: "#222",
+      border: "#eee",
+      height: 24,
     },
+    cells: {
+      background: "#ffffff",
+      text: "#222",
+      height: 24,
+    },
+    bottomRow: {
+      enabled: true,
+      background: "#fff",
+      text: "#666",
+      font: "12px Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+      height: 24,
+      modules: [
+        "scroll-position",
+        "total-rows",
+        {
+          type: "github-link",
+          position: "right",
+          url: "https://github.com/f1shy-dev/kasouka",
+        },
+      ],
+    },
+    selectedHighlight: () => "hsl(260deg, 91.2%, 59.8%, 0.15)",
+    hoverHighlight: (alpha: number) => `hsl(260deg, 91.2%, 59.8%,${alpha})`,
     scrollerHeight: 32_000,
-    bottomRowModules: [
-      "scroll-position",
-      "total-rows",
-      {
-        type: "github-link",
-        position: "right",
-        url: "https://github.com/f1shy-dev/kasouka",
-      },
-    ],
-    bottomRowHeight: 24,
   }
 );
 

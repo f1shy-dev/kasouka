@@ -6,7 +6,7 @@ import type { Column } from "../types";
 export class EveryUUIDVirtualDataSource implements DataSource {
   private static readonly TOTAL_UUIDS_BIG = 1n << 122n; // 2^122 unique v4 UUIDs
   private readonly columns: Column[] = [
-    { key: "id", label: "#", align: "left", theme: { rowText: "#666" } },
+    { key: "id", label: "#", align: "left", theme: { text: "#666" } },
     { key: "uuid", label: "UUID", align: "left" },
   ];
 

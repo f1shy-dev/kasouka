@@ -1,20 +1,13 @@
 export type TextAlign = "left" | "right" | "center";
 
-export interface Theme {
-  headerBg?: string;
-  headerText?: string;
-  headerBorder?: string;
-  rowBg?: string | ((rowIndex: bigint) => string);
-  rowText?: string;
-  rowSeparator?: string;
-  columnSeparator?: string;
-  selectedHighlight?: (alpha: number) => string;
-  hoverHighlight?: (alpha: number) => string;
-  hoverSeparator?: boolean;
+export interface CellTheme {
+  background: string | ((rowIndex: bigint) => string);
+  text: string | ((rowIndex: bigint) => string);
+  separator_x: string | false;
+  separator_y: string | false;
+  height: number;
 
-  bottomRowBg?: string;
-  bottomRowText?: string;
-  bottomRowFont?: string;
+  separator_y_hover: string | false;
 }
 
 export interface Column {
@@ -23,7 +16,7 @@ export interface Column {
   min?: number;
   weight?: number;
   align?: TextAlign;
-  theme?: Partial<Theme>;
+  theme?: Partial<Pick<CellTheme, "background" | "text">>;
 }
 
 export interface CsvData {
@@ -33,23 +26,12 @@ export interface CsvData {
   rows: number; // number of data rows (excludes header)
 }
 
-export type BottomRowModule = "scroll-position" | "total-rows" | "fps" | "github-link";
+export type BottomRowModule = "scroll-position" | "total-rows" | "github-link";
 
 export interface BottomRowModuleConfig {
   type: BottomRowModule;
   position?: "left" | "right";
   url?: string; // For github-link module
-}
-
-export interface VirtualTableOptions {
-  headerHeight?: number;
-  rowHeight?: number;
-  overscan?: number;
-  font?: string;
-  theme?: Theme;
-  scrollerHeight?: number;
-  bottomRowModules?: (BottomRowModule | BottomRowModuleConfig)[];
-  bottomRowHeight?: number;
 }
 
 export interface MeasureResult {
@@ -61,4 +43,32 @@ export interface InitElements {
   viewport: HTMLElement;
   spacer: HTMLElement;
   canvas: HTMLCanvasElement;
+}
+
+export interface VirtualTableOptions {
+  baseFont: string;
+  overscan: number;
+
+  header: {
+    enabled: boolean;
+    background: string;
+    text: string;
+    border: string;
+    height: number;
+  };
+
+  cells: CellTheme;
+
+  bottomRow: {
+    enabled: boolean;
+    background: string;
+    text: string;
+    font: string;
+    height: number;
+    modules: (BottomRowModule | BottomRowModuleConfig)[];
+  };
+
+  selectedHighlight: (alpha: number) => string;
+  hoverHighlight: (alpha: number) => string;
+  scrollerHeight: number;
 }
