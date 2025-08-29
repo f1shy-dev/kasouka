@@ -157,7 +157,6 @@ export class VirtualCanvasTable {
       const module = this.normalizeBottomRowModule(rawModule);
       (module.position === "right" ? rightModules : leftModules).push(module);
     }
-    console.log(leftModules, rightModules);
 
     const renderModule = (
       module: BottomRowModuleConfig,
