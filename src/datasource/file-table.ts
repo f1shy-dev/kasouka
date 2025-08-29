@@ -94,9 +94,7 @@ export class FileTableDataSource implements DataSource {
 
   private initWorker(): void {
     try {
-      const code = this.buildWorkerCode();
-      const blob = new Blob([code], { type: "text/javascript" });
-      this.worker = new Worker(URL.createObjectURL(blob));
+      this.worker = new Worker(new URL("./file-worker.ts", import.meta.url), { type: "module" });
       const file = this.file as File;
       this.worker.postMessage({ type: "init", file, encoding: this.enc, delimiter: this.delimiter });
       this.worker.onmessage = (ev: MessageEvent) => this.onWorkerMessage(ev.data);
@@ -107,77 +105,7 @@ export class FileTableDataSource implements DataSource {
     }
   }
 
-  private buildWorkerCode(): string {
-    return `
-self.onmessage = async (ev) => { handle(ev.data) };
-let g = { file: null, enc: 'utf-8', delimiter: ',' };
-function splitQuotedLine(line, delimiter) {
-  const cells = [];
-  let i = 0, n = line.length;
-  while (i < n) {
-    const ch = line.charCodeAt(i);
-    if (ch === 34) { // "
-      i++; let start = i; let buf = '';
-      while (i < n) {
-        const c = line.charCodeAt(i);
-        if (c === 34) {
-          if (i + 1 < n && line.charCodeAt(i + 1) === 34) { buf += line.slice(start, i) + '"'; i += 2; start = i; continue; }
-          buf += line.slice(start, i); i++; break;
-        }
-        i++;
-      }
-      if (i < n && line.startsWith(delimiter, i)) i += delimiter.length;
-      cells.push(buf);
-    } else {
-      const start = i;
-      const next = delimiter === '\\t' ? line.indexOf('\\t', i) : line.indexOf(delimiter, i);
-      if (next === -1) { cells.push(line.slice(start, n)); i = n; } else { cells.push(line.slice(start, next)); i = next + delimiter.length; }
-    }
-  }
-  return cells;
-}
-function handle(msg) {
-  if (msg.type === 'init') { g.file = msg.file; g.enc = msg.encoding || 'utf-8'; g.delimiter = msg.delimiter || ','; return; }
-  if (msg.type === 'index') return indexFile();
-  if (msg.type === 'loadWindow') return loadWindow(msg);
-  if (msg.type === 'cancel') { const ids = msg.ids || []; for (const id of ids) canceled.add(id); return; }
-}
-const canceled = new Set();
-async function indexFile() {
-  const file = g.file; const size = file.size; const reader = file.stream().getReader();
-  const offsets = [0]; let bytesRead = 0; let headerFound = false; let headerBufs = [];
-  while (true) {
-    const { value, done } = await reader.read(); if (done) break; if (!value) continue;
-    const chunk = value; bytesRead += chunk.byteLength;
-    for (let i = 0; i < chunk.length; i++) {
-      if (chunk[i] === 0x0a) {
-        const next = bytesRead - (chunk.length - i - 1);
-        offsets.push(next);
-        if (!headerFound) {
-          const before = chunk.subarray(0, i);
-          if (headerBufs.length) {
-            const total = headerBufs.reduce((a,b)=>a+b.length,0) + before.length;
-            const joined = new Uint8Array(total); let o=0; for (const seg of headerBufs) { joined.set(seg, o); o+=seg.length; } joined.set(before, o);
-            postMessage({ type: 'header', header: new TextDecoder(g.enc).decode(joined) });
-          } else {
-            postMessage({ type: 'header', header: new TextDecoder(g.enc).decode(before) });
-          }
-          headerFound = true;
-        }
-      }
-    }
-    if (!headerFound) headerBufs.push(chunk);
-    postMessage({ type: 'index-progress', bytesRead, size });
-  }
-  if (offsets[offsets.length-1] !== size) offsets.push(size);
-  const rows = Math.max(0, offsets.length - 2);
-  postMessage({ type: 'index-done', offsets: new Uint32Array(offsets), rows });
-}
-async function loadWindow(msg) {
-  const id = msg.id; canceled.delete(id);
-  const file = g.file; const start = msg.startOffset; const end = msg.endOffset;
-  const reader = file.slice(start, end).stream().getReader();
-  const td = new TextDecoder(g.enc); let parts = []; let total = 0;
+
   while (true) {
     if (canceled.has(id)) { try { await reader.cancel(); } catch (_) {} postMessage({ type: 'window-canceled', id }); return; }
     const { value, done } = await reader.read(); if (done) break; if (!value) continue;
