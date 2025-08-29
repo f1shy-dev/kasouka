@@ -375,9 +375,7 @@ export class VirtualCanvasTable {
         : 0;
       const bottomRowStart = this.els.viewport.clientHeight - bottomRowHeight;
 
-      // Check if click is in bottom row
       if (this.opts.bottomRow.enabled && y >= bottomRowStart) {
-        // Check if click is on any clickable area
         for (const area of this.bottomRowClickableAreas) {
           if (
             x >= area.x &&
@@ -394,7 +392,6 @@ export class VirtualCanvasTable {
 
       if (y < this.opts.header.height) return;
 
-      // Calculate BigInt row identity for correctness beyond Number.MAX_SAFE_INTEGER
       const domContent = Math.max(
         0,
         this.els.viewport.scrollTop - this.opts.header.height
@@ -430,9 +427,7 @@ export class VirtualCanvasTable {
           return;
         }
 
-        // Handle bottom row hover
         if (this.opts.bottomRow.enabled && y >= bottomRowStart) {
-          // Check if hovering over clickable area
           let overClickableArea = false;
           const x = e.clientX - rect.left + this.els.viewport.scrollLeft;
 
@@ -448,7 +443,6 @@ export class VirtualCanvasTable {
             }
           }
 
-          // Use viewport cursor since canvas has pointer-events: none
           this.els.viewport.style.cursor = overClickableArea
             ? "pointer"
             : "default";
@@ -461,7 +455,6 @@ export class VirtualCanvasTable {
           return;
         }
 
-        // Reset cursor when not over bottom row
         this.els.viewport.style.cursor = "default";
         const domContent = Math.max(
           0,
@@ -496,7 +489,6 @@ export class VirtualCanvasTable {
       { passive: true }
     );
     this.resize();
-    // Ensure horizontal scrollbar can appear in host container
     if (!this.els.viewport.style.overflowX)
       this.els.viewport.style.overflowX = "auto";
   }
@@ -665,8 +657,6 @@ export class VirtualCanvasTable {
     )}px`;
   }
 
-  // hover uses pointer position each frame; BigInt row helper removed
-
   private draw(): void {
     this.rafId = 0;
     if (!this.needsDraw) return;
@@ -676,12 +666,12 @@ export class VirtualCanvasTable {
     const scrollTop = this.els.viewport.scrollTop;
     const scrollLeft = this.els.viewport.scrollLeft;
     const ctx = this.ctx;
+
     // Hover easing: if we have a hovered row, ease in; else ease out
     const hoverTarget = this.hoveredRowBig != null ? 1 : 0;
     this.hoverAlpha += (hoverTarget - this.hoverAlpha) * 0.25;
     ctx.clearRect(0, 0, w, h);
 
-    // header bg
     ctx.fillStyle = this.opts.header.background;
     ctx.fillRect(0, 0, w, this.opts.header.height);
     ctx.strokeStyle = this.opts.header.border;
@@ -710,7 +700,7 @@ export class VirtualCanvasTable {
     ctx.restore();
     ctx.restore();
 
-    // visible rows (BigInt-safe)
+    // visible rows
     const domContent = Math.max(0, scrollTop - this.opts.header.height);
     const { firstRowBig, offsetWithin } = this.computeFirstRow(domContent, h);
     const yStart = this.opts.header.height - offsetWithin;
@@ -753,7 +743,7 @@ export class VirtualCanvasTable {
     let grew = false;
     const tableRemaining = Math.max(0, this.tableWidth - scrollLeft);
     const highlightW = this.tableWidth <= w ? w : Math.min(w, tableRemaining);
-    // BigInt row index for hover this frame
+
     const hoveredRowBigForFrame = this.hoveredRowBig;
     for (let i = 0; i < rowCount; i++) {
       const rowIndexBig = firstRowBig + BigInt(i);
@@ -763,7 +753,7 @@ export class VirtualCanvasTable {
           : Number(rowIndexBig);
       const y = yStart + i * this.opts.cells.height;
       if (y > h) break;
-      // Fill default row background first
+
       const defaultRowBg =
         typeof this.opts.cells.background === "function"
           ? this.opts.cells.background(rowIndexBig)
@@ -771,7 +761,6 @@ export class VirtualCanvasTable {
       ctx.fillStyle = defaultRowBg;
       ctx.fillRect(0, y, this.tableWidth, this.opts.cells.height);
 
-      // Apply column-specific backgrounds if any columns have theme overrides
       for (let c = 0; c < this.columns.length; c++) {
         const column = this.columns[c];
         const columnTheme = column?.theme;
@@ -793,7 +782,7 @@ export class VirtualCanvasTable {
         ctx.fillStyle = this.opts.selectedHighlight(1);
         ctx.fillRect(0, y, highlightW, this.opts.cells.height);
       }
-      // hover highlight (under text), skip if selected; use BigInt identity
+      // hover highlight (under text), skip if selected
       const isHover =
         hoveredRowBigForFrame != null && rowIndexBig === hoveredRowBigForFrame;
       if (isHover && !isSelected) {
@@ -840,7 +829,6 @@ export class VirtualCanvasTable {
         );
         ctx.clip();
 
-        // Apply column-level theme overrides
         if (columnTheme?.text) {
           ctx.fillStyle =
             typeof columnTheme.text === "function"
@@ -858,12 +846,10 @@ export class VirtualCanvasTable {
         }
         ctx.restore();
 
-        // On-the-fly width growth based on measured text
         const measured = Math.ceil(ctx.measureText(text).width) + 16; // padding
         const minCol = this.columns[c]?.min ?? (c === 0 ? 60 : 120);
         const needed = Math.max(minCol, measured);
         if (needed > cw) {
-          // Grow tracked width arrays lazily and schedule reflow
           this.colW[c] = needed;
           if (this.dynamicWidths) this.dynamicWidths[c] = needed;
           grew = true;
@@ -871,7 +857,7 @@ export class VirtualCanvasTable {
       }
     }
 
-    // vertical grid - draw column separators with column theme support
+    // vertical grid
     for (let i = 0; i < this.columns.length; i++) {
       const separatorColor = this.opts.cells.separator_x;
       if (separatorColor === false) continue;
@@ -893,7 +879,7 @@ export class VirtualCanvasTable {
           yStart + i * this.opts.cells.height + this.opts.cells.height + 0.5;
         if (y > h) break;
 
-        // Skip separator if hoverSeparator is false and this row or next row is hovered
+        // Skip separator if !separator_y_hover
         if (
           !this.opts.cells.separator_y_hover &&
           hoveredRowBigForFrame != null
@@ -912,7 +898,6 @@ export class VirtualCanvasTable {
       ctx.stroke();
     }
     ctx.restore();
-    // If any column grew, recompute x positions and total width, then request redraw
     if (grew) {
       this.colX.length = 0;
       let nx = 0;
@@ -930,10 +915,8 @@ export class VirtualCanvasTable {
     }
     ctx.restore();
 
-    // Render bottom row
     this.renderBottomRow(ctx, w, h, scrollLeft);
 
-    // Continue hover animation during transitions
     if (hoverTarget === 0 && this.hoverAlpha < 0.01) {
       this.hoverAlpha = 0;
     }
@@ -942,7 +925,6 @@ export class VirtualCanvasTable {
       this.schedule();
     }
 
-    // Debug overlay (drawn in-canvas)
     if (this.debugEnabled) {
       this.debugText = [
         `domMax=${this.scrollScale.domMax.toFixed(1)}`,
